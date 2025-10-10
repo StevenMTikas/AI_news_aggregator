@@ -15,16 +15,34 @@ warnings.filterwarnings("ignore", category=SyntaxWarning, module="pysbd")
 
 def run():
     """
-    Run the crew.
+    Run the crew to generate an AI blog post.
     """
+    now = datetime.now()
     inputs = {
-        'topic': 'AI LLMs',
-        'current_year': str(datetime.now().year)
+        'topic': 'AI and how it impacts everyday life',
+        'current_year': str(now.year),
+        'current_date_and_time': now.strftime('%Y-%m-%d %H:%M:%S')
     }
-    
+
+    print("=" * 80)
+    print("AI NEWS AGGREGATOR - Blog Post Generator")
+    print("=" * 80)
+    print(f"Topic: {inputs['topic']}")
+    print(f"Date: {inputs['current_date_and_time']}")
+    print("=" * 80)
+    print()
+
     try:
-        AiNewsAggregator().crew().kickoff(inputs=inputs)
+        result = AiNewsAggregator().crew().kickoff(inputs=inputs)
+        print("\n" + "=" * 80)
+        print("✅ Blog post generated successfully!")
+        print("Check the 'output' folder in the root directory for your blog post.")
+        print("=" * 80)
+        return result
     except Exception as e:
+        print("\n" + "=" * 80)
+        print(f"❌ Error: {e}")
+        print("=" * 80)
         raise Exception(f"An error occurred while running the crew: {e}")
 
 

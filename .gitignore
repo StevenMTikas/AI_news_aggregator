@@ -35,6 +35,10 @@ env/
 
 # Output files
 ai_news_results_*.json
+output/
+
+# Environment files
+.env
 
 # OS
 .DS_Store

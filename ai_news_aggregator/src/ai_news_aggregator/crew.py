@@ -2,6 +2,9 @@ from crewai import Agent, Crew, Process, Task
 from crewai.project import CrewBase, agent, crew, task
 from crewai.agents.agent_builder.base_agent import BaseAgent
 from typing import List
+from datetime import datetime
+import os
+
 # If you want to run a snippet of code before or after the crew starts,
 # you can use the @before_kickoff and @after_kickoff decorators
 # https://docs.crewai.com/concepts/crews#example-crew-class-with-decorators
@@ -27,9 +30,9 @@ class AiNewsAggregator():
         )
 
     @agent
-    def reporting_analyst(self) -> Agent:
+    def blog_writer(self) -> Agent:
         return Agent(
-            config=self.agents_config['reporting_analyst'], # type: ignore[index]
+            config=self.agents_config['blog_writer'], # type: ignore[index]
             verbose=True
         )
 
@@ -43,10 +46,18 @@ class AiNewsAggregator():
         )
 
     @task
-    def reporting_task(self) -> Task:
+    def blog_writer_task(self) -> Task:
+        # Create output directory if it doesn't exist
+        output_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), 'output')
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Generate filename with timestamp
+        timestamp = datetime.now().strftime('%Y-%m-%d')
+        output_file = os.path.join(output_dir, f'{timestamp}-ai-blog-post.md')
+
         return Task(
-            config=self.tasks_config['reporting_task'], # type: ignore[index]
-            output_file='report.md'
+            config=self.tasks_config['blog_writer_task'], # type: ignore[index]
+            output_file=output_file
         )
 
     @crew
