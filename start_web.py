@@ -10,14 +10,13 @@ from pathlib import Path
 
 def main():
     """Main function to start the web server"""
-    env_path = Path('ai_news_aggregator') / '.env'
+    env_path = Path('.env')
     if not env_path.exists():
         print("⚠️  Warning: No .env file found!")
-        print(f"Please create a .env file at: {env_path}")
+        print(f"Please create a .env file in the root directory")
         print("\nExample content:")
         print("  OPENAI_API_KEY=sk-your-key-here")
         print("  SERPER_API_KEY=your-serper-key-here")
-        print("\nYou can copy from ai_news_aggregator/.env.example if it exists.")
         response = input("\nContinue anyway? (y/N): ")
         if response.lower() != 'y':
             sys.exit(1)
@@ -33,7 +32,7 @@ def main():
         uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=False)
     except ImportError:
         print("❌ Error: uvicorn not installed")
-        print("Please run: pip install -e ai_news_aggregator/")
+        print("Please run: pip install -e .")
         sys.exit(1)
     except KeyboardInterrupt:
         print("\n\n👋 Server stopped. Goodbye!")

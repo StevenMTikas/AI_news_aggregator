@@ -1,0 +1,105 @@
+keyword_research_task:
+  description: >
+    Before conducting keyword research, check the keywords_tracker.json file in the knowledge
+    folder to see what topics have already been covered and what keywords have been used.
+    Avoid duplicating topics that have been recently covered. If the topic is too similar
+    to existing content, suggest a different angle or subtopic that hasn't been covered.
+    
+    Conduct comprehensive keyword research for {topic} to identify the most relevant,
+    trending, and high-impact keywords. Focus on finding keywords that are:
+    - Currently trending and popular in {current_year} for small to medium sizes businesses
+    - Relevant to for small to medium sizes business owners
+    - Related to practical applications and real-world use cases for small to medium sizes business owners
+    - Include both short-tail and long-tail keywords
+    - Cover different aspects of {topic} (technical, practical, benefits, challenges) for small to medium sizes businesses
+    - Include related terms, synonyms, and variations
+    - NOT already used in previous content (check keywords_tracker.json)
+    
+    Search for keywords across different categories: trending terms, search volume,
+    competition level, and user intent. Prioritize keywords that everyday people
+    would actually search for when interested in {topic}.
+    
+    IMPORTANT AND REQUIRED: After completing the research, update the keywords_tracker.json file
+    with the new topic and keywords to prevent future duplication.
+  expected_output: >
+    A comprehensive keyword research report for {topic} including:
+  
+    **DETAILED KEYWORD ANALYSIS:**
+    - Long-tail keywords (3-5 variations based on primary keywords)
+    - Trending keywords for {current_year}
+    - Related terms and synonyms
+    - Keywords by category (technical, practical, benefits, challenges)
+    - Search intent analysis (informational, commercial, navigational)
+    - Keyword difficulty assessment
+    - Recommended focus keywords for content creation
+    - Keywords organized by priority and relevance
+    - Updated keywords_tracker.json file with new topic and keywords
+
+  agent: keyword_researcher
+  verbose: true
+
+research_task:
+  description: >
+    Using the keyword research results provided, look for the {topic} Search for current news, trends, and real-world
+    applications from {current_year} that specifically relate to these primary keywords.
+    Use the trending terms and long-tail keywords to guide your search strategy. Find at
+    least 5 different sources or examples of how these primary keywords are being used
+    or will be used in daily life, prioritizing content that matches the search intent
+    and user interests identified in the keyword research. Focus on practical, relatable
+    examples that everyday people can understand and that correspond to what they're
+    actually searching for based on the keyword research findings.
+  expected_output: >
+    A comprehensive research report about the {topic} identified in the keyword
+    research, including:
+    - Latest developments and news from {current_year} focused on the primary keywords
+    - How the {topic} impact everyday life (home, work, health, education, etc.)
+    - Key trends and future implications of the {topic}
+    - Content organized by keyword categories (technical, practical, benefits, challenges)
+    - Sources and references for all information on {topic}
+    - Research findings mapped to keyword search intent (informational, commercial, navigational)
+    - Clear identification of which primary keywords are being researched and why they're relevant
+  agent: researcher
+  verbose: true
+  context: [keyword_research_task]
+
+blog_writer_task:
+  description: >
+    Using the research provided, look for the {topic} section
+    from the keyword research task. Write an engaging, conversational blog post about this {topic}
+    as the main topic. The blog post     should focus on these primary keywords as the main topic. 
+    Write for everyday readers     who want to understand how these primary keywords affect their daily 
+    lives. Use a warm, friendly tone like you're explaining to a friend. Include practical examples, 
+    relatable scenarios, and avoid technical jargon. Make it interesting and accessible.
+    
+    CRITICAL: Use the {topic} to create a URL-friendly filename by:
+    1. Taking the {topic} from the keyword research
+    2. Converting them to lowercase
+    3. Replacing spaces with hyphens
+    4. Removing special characters
+    5. Using this as the keyword title in the filename format
+
+    Format the blog post with proper Jekyll front matter including:
+    - title
+    - date ({current_year})
+    - categories: [AI, Technology, Everyday Life]
+    - author: Steven Tikas
+    - layout: post
+
+    The blog content should include:
+    - Engaging introduction that hooks the reader
+    - 3-5 main sections covering different aspects
+    - Real-world examples and practical applications
+    - Conversational, friendly tone throughout
+    - Conclusion that summarizes key takeaways
+    - Be between 400-800 words per post
+
+    The blog post will be automatically saved to the output folder with a filename
+    based on the primary keywords found in the keyword research.
+  expected_output: >
+    A complete blog post in Markdown format with Jekyll front matter. The post should be 
+    600-1000 words, engaging, conversational, and focused on showing everyday readers how the {topic}
+    impacts their daily lives. Written in a friendly, accessible tone that non-technical 
+    readers will enjoy and understand.
+  agent: blog_writer
+  verbose: true
+  context: [research_task, keyword_research_task]

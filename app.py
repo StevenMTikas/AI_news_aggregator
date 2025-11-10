@@ -3,7 +3,9 @@
 FastAPI Web Application for AI News Aggregator
 Provides a web interface for generating AI blog posts
 """
+import os
 import uuid
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional
@@ -11,17 +13,44 @@ from typing import Dict, Optional
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
 from src.ai_news_aggregator.main import build_default_inputs, run_pipeline
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# Load environment variables
 load_dotenv('.env')
+
+# Check for required environment variables
+required_env_vars = ['OPENAI_API_KEY', 'SERPER_API_KEY']
+missing_vars = [var for var in required_env_vars if not os.getenv(var)]
+if missing_vars:
+    logger.warning(f"Missing environment variables: {', '.join(missing_vars)}")
+    logger.warning("The application may not function correctly without these variables.")
+else:
+    logger.info("All required environment variables are set.")
 
 app = FastAPI(
     title="AI News Aggregator",
     description="Generate AI-powered blog posts with a beautiful web interface",
     version="1.0.0"
+)
+
+# Add CORS middleware for production
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Configure this to your domain in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 tasks: Dict[str, Dict] = {}
@@ -50,9 +79,16 @@ class TaskStatus(BaseModel):
 
 def run_blog_generation(task_id: str, topic: str, topic_slug: Optional[str] = None):
     try:
+        logger.info(f"Starting blog generation for task {task_id}, topic: {topic}")
         tasks[task_id]["status"] = "processing"
         tasks[task_id]["progress"] = 10
         tasks[task_id]["message"] = "Initializing AI agents..."
+        
+        # Check for API keys before starting
+        if not os.getenv('OPENAI_API_KEY'):
+            raise ValueError("OPENAI_API_KEY is not set. Please configure your environment variables.")
+        if not os.getenv('SERPER_API_KEY'):
+            raise ValueError("SERPER_API_KEY is not set. Please configure your environment variables.")
         
         slug = topic_slug or topic
         inputs = build_default_inputs(topic=topic, topic_slug=slug)
@@ -71,10 +107,13 @@ def run_blog_generation(task_id: str, topic: str, topic_slug: Optional[str] = No
         tasks[task_id]["result"] = str(result.raw)
         tasks[task_id]["download_url"] = f"/download/{output_path.name}"
         tasks[task_id]["output_file"] = str(output_path)
+        logger.info(f"Blog generation completed for task {task_id}")
     except Exception as e:
+        error_message = str(e)
+        logger.error(f"Blog generation failed for task {task_id}: {error_message}")
         tasks[task_id]["status"] = "failed"
         tasks[task_id]["progress"] = 0
-        tasks[task_id]["message"] = f"Error: {str(e)}"
+        tasks[task_id]["message"] = f"Error: {error_message}"
 
 
 @app.get("/", response_class=HTMLResponse)

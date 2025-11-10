@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI News Aggregator - Blog Post Generator</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="logo">
+                <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect width="40" height="40" rx="8" fill="url(#gradient)"/>
+                    <path d="M20 10L28 18L20 26L12 18L20 10Z" fill="white" opacity="0.9"/>
+                    <path d="M20 14L24 18L20 22L16 18L20 14Z" fill="white"/>
+                    <defs>
+                        <linearGradient id="gradient" x1="0" y1="0" x2="40" y2="40">
+                            <stop stop-color="#667eea"/>
+                            <stop offset="1" stop-color="#764ba2"/>
+                        </linearGradient>
+                    </defs>
+                </svg>
+                <h1>AI News Aggregator</h1>
+            </div>
+            <p class="subtitle">Generate engaging AI-powered blog posts in minutes</p>
+        </header>
+        <main class="main-content">
+            <div class="card" id="inputCard">
+                <h2>📝 Create Your Blog Post</h2>
+                <form id="blogForm">
+                    <div class="form-group">
+                        <label for="topic">Blog Post Topic</label>
+                        <input type="text" id="topic" name="topic" placeholder="e.g., Best AI Tools for Restaurants to Boost Reservations" required minlength="3">
+                        <small>What would you like to write about? Be specific for better results.</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="topicSlug">URL Slug (Optional)</label>
+                        <input type="text" id="topicSlug" name="topicSlug" placeholder="e.g., ai-tools-restaurants-boost-reservations">
+                        <small>A URL-friendly version of your topic (auto-generated if left blank)</small>
+                    </div>
+                    <button type="submit" class="btn btn-primary" id="generateBtn">
+                        <span class="btn-text">Generate Blog Post</span>
+                        <span class="btn-icon">🚀</span>
+                    </button>
+                </form>
+                <div class="info-box">
+                    <strong>💡 What to expect:</strong>
+                    <ul>
+                        <li>AI agents will research your topic</li>
+                        <li>Generate 600-1000 word blog post</li>
+                        <li>Format with Jekyll front matter</li>
+                        <li>Takes 1-3 minutes to complete</li>
+                        <li>Cost: ~$0.01-0.05 per post</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="card hidden" id="progressCard">
+                <h2>⚙️ Generating Your Blog Post</h2>
+                <div class="progress-container">
+                    <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+                    <div class="progress-text" id="progressText">0%</div>
+                </div>
+                <div class="status-message" id="statusMessage">Initializing...</div>
+                <div class="loading-spinner"><div class="spinner"></div></div>
+                <p class="tip">💡 <strong>Tip:</strong> Keep this page open while we generate your content.</p>
+            </div>
+            <div class="card hidden" id="resultsCard">
+                <h2>✅ Blog Post Generated!</h2>
+                <div class="success-message">
+                    <svg width="60" height="60" viewBox="0 0 60 60" fill="none">
+                        <circle cx="30" cy="30" r="30" fill="#10b981" opacity="0.1"/>
+                        <path d="M20 30L26 36L40 22" stroke="#10b981" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                    <p>Your blog post has been generated successfully!</p>
+                </div>
+                <div class="action-buttons">
+                    <button class="btn btn-primary" id="downloadBtn"><span class="btn-icon">⬇️</span><span class="btn-text">Download Markdown</span></button>
+                    <button class="btn btn-secondary" id="viewBtn"><span class="btn-icon">👁️</span><span class="btn-text">View Content</span></button>
+                    <button class="btn btn-secondary" id="newPostBtn"><span class="btn-icon">➕</span><span class="btn-text">Create Another</span></button>
+                </div>
+                <div class="preview hidden" id="previewContent"><h3>Preview</h3><div class="preview-box"><pre id="contentPreview"></pre></div></div>
+            </div>
+            <div class="card error-card hidden" id="errorCard">
+                <h2>⚠️ Oops! Something Went Wrong</h2>
+                <div class="error-message" id="errorMessage">An error occurred while generating your blog post.</div>
+                <button class="btn btn-secondary" id="retryBtn"><span class="btn-icon">🔄</span><span class="btn-text">Try Again</span></button>
+            </div>
+        </main>
+        <footer class="footer">
+            <p>Powered by <strong>CrewAI</strong> & <strong>GPT-4o-mini</strong></p>
+            <p class="footer-links"><a href="https://docs.crewai.com" target="_blank">Documentation</a> • <a href="https://platform.openai.com" target="_blank">OpenAI</a> • <a href="https://render.com" target="_blank">Render</a></p>
+        </footer>
+    </div>
+    <script src="/static/app.js"></script>
+</body>
+</html>
+

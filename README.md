@@ -9,49 +9,75 @@ This project uses AI agents to:
 2. **Write** engaging blog posts formatted for GitHub Pages (Jekyll)
 3. **Save** posts to the `output/` folder, ready for publishing
 
-## 🚀 Quick Start
+## 🌐 Two Ways to Use
+
+### Option 1: Web Interface (Recommended)
+Beautiful, user-friendly web interface with real-time progress tracking.
+
+### Option 2: Command Line
+Direct command-line execution for automation and scripting.
+
+## 🚀 Quick Start - Web Interface
 
 ### 1. Install Dependencies
 
 ```bash
-cd ai_news_aggregator
 pip install -e .
 ```
 
-### 2. Set Up API Key
+### 2. Set Up Environment Variables
 
-Create a `.env` file in the `ai_news_aggregator/` directory:
+Create a `.env` file in the root directory (see `ENV_TEMPLATE.txt`):
 
 ```bash
-cd ai_news_aggregator
-cp .env.example .env
-```
-
-Edit `.env` and add your OpenAI API key:
-```
 OPENAI_API_KEY=your-actual-api-key-here
+SERPER_API_KEY=your-actual-serper-key-here
 ```
 
-Get your API key from: https://platform.openai.com/api-keys
+Get your API keys:
+- **OpenAI**: https://platform.openai.com/api-keys
+- **Serper**: https://serper.dev/api-key (free tier available)
 
-### 3. Run the Generator
+### 3. Start the Web Server
 
 ```bash
-cd ai_news_aggregator
+python start_web.py
+```
+
+### 4. Open Your Browser
+
+Navigate to: **http://localhost:8000**
+
+You'll see a beautiful web interface where you can:
+- ✅ Enter your blog topic
+- ✅ Watch real-time progress
+- ✅ Download generated blog posts
+- ✅ View blog content in your browser
+
+---
+
+## 🚀 Quick Start - Command Line
+
+### 1. Install and Configure
+
+Follow steps 1-2 from the Web Interface section above.
+
+### 2. Run the Generator
+
+```bash
 crewai run
 ```
 
 Or using Python directly:
 ```bash
-cd ai_news_aggregator
-python src/ai_news_aggregator/main.py
+python -m ai_news_aggregator.main
 ```
 
-### 4. Find Your Blog Post
+### 3. Find Your Blog Post
 
 The generated blog post will be saved to:
 ```
-output/YYYY-MM-DD-ai-blog-post.md
+output/YYYY-MM-DD-[topic-slug]-blog-post.md
 ```
 
 ## 📝 Output Format
@@ -91,19 +117,27 @@ Using GPT-4o-mini, each blog post costs approximately **$0.01-0.05** to generate
 
 ```
 AI_news_aggregator/
-├── ai_news_aggregator/              # CrewAI project
-│   ├── .env                         # Your API keys (create this)
-│   ├── .env.example                 # Template for .env
-│   ├── pyproject.toml               # Dependencies
-│   ├── src/ai_news_aggregator/
-│   │   ├── main.py                  # Entry point
-│   │   ├── crew.py                  # Agent definitions
-│   │   └── config/
-│   │       ├── agents.yaml          # Agent configurations
-│   │       └── tasks.yaml           # Task definitions
-│   └── README.md                    # CrewAI documentation
-└── output/                          # Generated blog posts (auto-created)
-    └── YYYY-MM-DD-ai-blog-post.md
+├── app.py                           # FastAPI web application
+├── start_web.py                     # Web server launcher
+├── pyproject.toml                   # Project dependencies
+├── requirements.txt                 # Render deployment dependencies
+├── render.yaml                      # Render deployment config
+├── .env                             # Your API keys (create this)
+├── ENV_TEMPLATE.txt                 # Template for .env
+├── static/                          # Web interface files
+│   ├── index.html
+│   ├── style.css
+│   └── app.js
+├── src/ai_news_aggregator/          # Core application
+│   ├── main.py                      # Entry point
+│   ├── crew.py                      # Agent definitions
+│   └── config/
+│       ├── agents.yaml              # Agent configurations
+│       └── tasks.yaml               # Task definitions
+├── output/                          # Generated blog posts
+│   └── YYYY-MM-DD-[topic]-blog-post.md
+└── knowledge/                       # Keyword tracking
+    └── keywords_tracker.json
 ```
 
 ## 🎨 Customization
@@ -162,14 +196,32 @@ The script will automatically create the `output/` folder in the root directory.
 - [OpenAI API Documentation](https://platform.openai.com/docs)
 - [GitHub Pages Documentation](https://docs.github.com/en/pages)
 
+## 🌐 Deploy to Production
+
+Ready to deploy your AI News Aggregator to the web?
+
+See the complete deployment guide: **[DEPLOYMENT.md](DEPLOYMENT.md)**
+
+Deploy to Render in minutes:
+1. Push to GitHub
+2. Connect Render to your repository
+3. Set environment variables
+4. Deploy!
+
+Your app will be live at: `https://your-app.onrender.com`
+
 ## 🎉 Next Steps
 
-1. **Test the output** - Review the generated blog posts in the `output/` folder
-2. **Customize** - Adjust agents and tasks to match your style
-3. **Publish** - Upload blog posts to your GitHub Pages site
-4. **Automate** - Set up scheduled runs to generate regular content
+1. **Test locally** - Run the web interface with `python start_web.py`
+2. **Generate content** - Create your first AI blog post
+3. **Customize** - Adjust agents and tasks to match your style
+4. **Deploy** - Follow the [DEPLOYMENT.md](DEPLOYMENT.md) guide
+5. **Publish** - Share your AI-generated blog posts!
 
 ---
 
-**Ready to generate your first AI blog post?** Just run `crewai run` from the `ai_news_aggregator/` directory! 🚀
+**Ready to get started?**
+- 🌐 **Web Interface**: `python start_web.py` → http://localhost:8000
+- 💻 **Command Line**: `crewai run`
+- 🚀 **Deploy**: See [DEPLOYMENT.md](DEPLOYMENT.md)
 
