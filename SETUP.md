@@ -2,55 +2,77 @@
 
 ## ✅ What's Been Configured
 
-Your AI News Aggregator is now set up to:
+Your AI News Aggregator is set up to:
 - ✅ Use **GPT-4o-mini** for cost-effective blog generation
+- ✅ Research keywords first (tracked in `knowledge/keywords_tracker.json` to avoid repeating topics)
 - ✅ Generate **GitHub Pages-ready** blog posts with Jekyll front matter
-- ✅ Save posts to `output/` folder in the root directory
+- ✅ Save posts to the `output/` folder in the project root
 - ✅ Write in a **conversational, blog-style** tone
-- ✅ Focus on **AI's impact on everyday life**
+- ✅ Focus on **AI's impact on everyday life** for small/medium business owners
 
 ## 🚀 To Get Started
 
 ### 1. Create Your .env File
 
+Copy `ENV_TEMPLATE.txt` to `.env` in the project root and fill in your keys:
+
 ```bash
-cd ai_news_aggregator
-cp .env.example .env
+cp ENV_TEMPLATE.txt .env
 ```
 
-### 2. Add Your OpenAI API Key
+### 2. Add Your API Keys
 
-Edit `ai_news_aggregator/.env`:
+Edit `.env`:
 ```
 OPENAI_API_KEY=sk-your-actual-key-here
+SERPER_API_KEY=your-serper-key-here
 ```
 
-Get your key from: https://platform.openai.com/api-keys
+Get your keys from:
+- OpenAI: https://platform.openai.com/api-keys
+- Serper: https://serper.dev/api-key
 
-### 3. Run the Generator
+### 3. Install Dependencies
 
 ```bash
-cd ai_news_aggregator
+pip install -e .
+```
+
+### 4. Run the Generator
+
+Web interface (recommended):
+```bash
+python start_web.py
+```
+Then open http://localhost:8000.
+
+Command line:
+```bash
 crewai run
 ```
 
-### 4. Check Your Blog Post
+### 5. Check Your Blog Post
 
 Look in the `output/` folder:
 ```
-output/2025-10-10-ai-blog-post.md
+output/2026-08-06-your-topic-blog-post.md
 ```
 
 ## 📝 What the Agents Do
 
+### Keyword Researcher Agent (GPT-4o-mini)
+- Checks `knowledge/keywords_tracker.json` to avoid repeating recent topics
+- Finds trending, relevant keywords for the topic
+- Updates `keywords_tracker.json` with the new keywords
+
 ### Researcher Agent (GPT-4o-mini)
-- Searches for latest AI developments
+- Searches for latest AI developments, guided by the keyword research
 - Finds 5+ real-world examples
 - Focuses on everyday life impact
 - Gathers sources and references
 
 ### Blog Writer Agent (GPT-4o-mini)
-- Writes 800-1200 word blog posts
+- Writes 600-1000 word blog posts
 - Conversational, friendly tone
 - Includes Jekyll front matter
 - Ready for GitHub Pages
@@ -64,9 +86,9 @@ Approximately **$0.01-0.05** per blog post using GPT-4o-mini.
 ```markdown
 ---
 title: "How AI is Transforming Your Daily Life"
-date: 2025-10-10
+date: 2026-08-06
 categories: [AI, Technology, Everyday Life]
-author: AI News Aggregator
+author: Steven Tikas
 layout: post
 ---
 
@@ -84,22 +106,20 @@ Key takeaways...
 
 ## 🔧 Customization
 
-### Change the Topic
-Edit `ai_news_aggregator/src/ai_news_aggregator/main.py`:
+### Change the Default Topic
+Edit `src/ai_news_aggregator/main.py`:
 ```python
-'topic': 'Your custom topic here'
+DEFAULT_TOPIC = "Your custom topic here"
+DEFAULT_SLUG = "Your custom topic here"
 ```
 
 ### Adjust Writing Style
-Edit `ai_news_aggregator/src/ai_news_aggregator/config/agents.yaml`:
+Edit `src/ai_news_aggregator/config/agents.yaml`:
 - Modify the `blog_writer` backstory
 - Change the tone and style description
 
 ### Change Output Location
-Edit `ai_news_aggregator/src/ai_news_aggregator/crew.py`:
-```python
-output_dir = 'your/custom/path'
-```
+Edit `OUTPUT_DIR` in `src/ai_news_aggregator/main.py`, or pass `output_dir` to `run_pipeline()`.
 
 ## ✨ Next Steps
 
@@ -113,7 +133,5 @@ output_dir = 'your/custom/path'
 **Ready to generate your first blog post?** 🚀
 
 ```bash
-cd ai_news_aggregator
-crewai run
+python start_web.py
 ```
-
