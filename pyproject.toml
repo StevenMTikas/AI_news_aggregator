@@ -21,7 +21,6 @@ test = [
 
 [project.scripts]
 ai_news_aggregator = "ai_news_aggregator.main:run"
-run_crew = "ai_news_aggregator.main:run"
 train = "ai_news_aggregator.main:train"
 replay = "ai_news_aggregator.main:replay"
 test = "ai_news_aggregator.main:test"

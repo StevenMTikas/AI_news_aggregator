@@ -63,6 +63,20 @@ body {
     font-size: 1.125rem;
 }
 
+.header-nav {
+    margin-top: 0.75rem;
+}
+
+.header-nav a {
+    color: var(--primary);
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.header-nav a:hover {
+    color: var(--primary-dark);
+}
+
 .card {
     background: var(--bg-card);
     border-radius: 12px;
@@ -93,19 +107,75 @@ body {
     color: var(--text-primary);
 }
 
-.form-group input {
+.form-group input,
+.form-group select,
+.form-group textarea {
     width: 100%;
     padding: 0.75rem 1rem;
     border: 2px solid var(--border);
     border-radius: 8px;
     font-size: 1rem;
+    font-family: inherit;
     transition: all 0.3s ease;
 }
 
-.form-group input:focus {
+.form-group textarea {
+    resize: vertical;
+    min-height: 5rem;
+}
+
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
     outline: none;
     border-color: var(--primary);
     box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.project-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.project-table th,
+.project-table td {
+    text-align: left;
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.project-table th {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.project-table .row-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.btn-small {
+    padding: 0.4rem 0.9rem;
+    font-size: 0.875rem;
+}
+
+.btn-danger {
+    background: rgba(239, 68, 68, 0.1);
+    color: var(--error);
+    border: 2px solid var(--error);
+}
+
+.btn-danger:hover {
+    background: var(--error);
+    color: white;
+}
+
+.empty-state {
+    text-align: center;
+    color: var(--text-secondary);
+    padding: 2rem 0;
 }
 
 .form-group small {

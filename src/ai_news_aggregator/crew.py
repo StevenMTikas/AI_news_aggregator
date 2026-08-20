@@ -2,10 +2,13 @@ from typing import List
 
 from crewai import Agent, Crew, Process, Task
 from crewai.agents.agent_builder.base_agent import BaseAgent
-from crewai.project import CrewBase, agent, crew, task
+from crewai.project import CrewBase, agent, crew, output_pydantic, task
 from crewai_tools import SerperDevTool
 
+from .schemas import BlogContent as _BlogContent
+
 SERPER_TOOL = SerperDevTool()
+BlogContent = output_pydantic(_BlogContent)
 
 
 @CrewBase
@@ -14,6 +17,7 @@ class AiNewsAggregator:
 
     agents: List[BaseAgent]
     tasks: List[Task]
+    BlogContent = BlogContent
 
     @agent
     def keyword_researcher(self) -> Agent:

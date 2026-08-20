@@ -10,6 +10,7 @@ const resultsCard = document.getElementById('resultsCard');
 const errorCard = document.getElementById('errorCard');
 
 const blogForm = document.getElementById('blogForm');
+const projectSelect = document.getElementById('project');
 const topicInput = document.getElementById('topic');
 const topicSlugInput = document.getElementById('topicSlug');
 const generateBtn = document.getElementById('generateBtn');
@@ -30,7 +31,27 @@ const errorMessage = document.getElementById('errorMessage');
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
     setupEventListeners();
+    loadProjects();
 });
+
+async function loadProjects() {
+    try {
+        const response = await fetch('/api/projects');
+        const projects = await response.json();
+
+        if (!projects.length) {
+            projectSelect.innerHTML = '<option value="">No projects yet</option>';
+            showError('No projects found. Create one on the Manage Projects page before generating content.');
+            return;
+        }
+
+        projectSelect.innerHTML = '<option value="">Select a project...</option>' +
+            projects.map(p => `<option value="${p.slug}">${p.name}</option>`).join('');
+    } catch (error) {
+        console.error('Error loading projects:', error);
+        projectSelect.innerHTML = '<option value="">Failed to load projects</option>';
+    }
+}
 
 function setupEventListeners() {
     blogForm.addEventListener('submit', handleFormSubmit);
@@ -43,16 +64,22 @@ function setupEventListeners() {
 async function handleFormSubmit(e) {
     e.preventDefault();
     
+    const projectSlug = projectSelect.value;
     const topic = topicInput.value.trim();
     const topicSlug = topicSlugInput.value.trim();
-    
+
+    if (!projectSlug) {
+        showError('Please select a project.');
+        return;
+    }
+
     if (!topic || topic.length < 3) {
         showError('Please enter a topic with at least 3 characters.');
         return;
     }
-    
+
     showCard('progress');
-    
+
     try {
         const response = await fetch('/api/generate', {
             method: 'POST',
@@ -61,6 +88,7 @@ async function handleFormSubmit(e) {
             },
             body: JSON.stringify({
                 topic: topic,
+                project_slug: projectSlug,
                 topic_slug: topicSlug || null
             })
         });
@@ -141,16 +169,31 @@ async function handleCompletion(data) {
         }
         
         const result = await response.json();
-        
+
         downloadBtn.dataset.url = result.download_url;
-        contentPreview.textContent = result.content;
-        
+        contentPreview.textContent = renderContentPreview(result.content);
+
         showCard('results');
         
     } catch (error) {
         console.error('Error:', error);
         showError('Failed to retrieve the generated content.');
     }
+}
+
+function renderContentPreview(content) {
+    if (!content) return '';
+    const sections = (content.sections || [])
+        .map(s => `## ${s.heading}\n\n${s.body}${s.pull_quote ? `\n\n> ${s.pull_quote}` : ''}`)
+        .join('\n\n');
+    const keyPoints = (content.key_points || []).map(p => `- ${p}`).join('\n');
+    return [
+        `# ${content.title}`,
+        content.hook,
+        sections,
+        keyPoints ? `## Key Takeaways\n\n${keyPoints}` : '',
+        content.call_to_action || '',
+    ].filter(Boolean).join('\n\n');
 }
 
 function handleDownload() {
@@ -242,4 +285,9 @@ window.addEventListener('online', () => {
         startPolling();
     }
 });
+
+// Node/Vitest test access only -- no-op in the browser, where `module` is undefined.
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { generateSlug, renderContentPreview };
+}
 

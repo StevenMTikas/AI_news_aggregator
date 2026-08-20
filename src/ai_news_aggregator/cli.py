@@ -6,6 +6,7 @@ from .main import (
     build_default_inputs,
     run_pipeline,
 )
+from .projects import get_project
 
 
 def print_banner(topic: str, timestamp: str, width: int = BANNER_WIDTH) -> None:
@@ -34,15 +35,15 @@ def print_error(exc: Exception) -> None:
     print(separator)
 
 
-def run(topic: str = DEFAULT_TOPIC, topic_slug: str = DEFAULT_SLUG):
+def run(project_slug: str, topic: str = DEFAULT_TOPIC, topic_slug: str = DEFAULT_SLUG):
     """
-    Run the crew to generate an AI blog post using default CLI behaviour.
+    Run the crew to generate a blog post for the given project.
     """
-    inputs = build_default_inputs(topic, topic_slug)
-    print_banner(inputs["topic"], inputs["current_date_and_time"])
-
     try:
-        result, output_path = run_pipeline(inputs)
+        project = get_project(project_slug)
+        inputs = build_default_inputs(topic, project, topic_slug)
+        print_banner(inputs["topic"], inputs["current_date_and_time"])
+        result, output_path = run_pipeline(inputs, project)
     except Exception as exc:  # pragma: no cover - CLI friendly output
         print_error(exc)
         raise RuntimeError("An error occurred while running the crew.") from exc

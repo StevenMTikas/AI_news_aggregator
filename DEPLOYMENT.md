@@ -2,6 +2,10 @@
 
 This guide will walk you through deploying the AI News Aggregator to Render.
 
+> If your Render account is suspended or you'd rather not pay to avoid cold starts, see
+> [GOOGLE_CLOUD_RUN_DEPLOYMENT.md](GOOGLE_CLOUD_RUN_DEPLOYMENT.md) for a free, private
+> alternative using the same `Dockerfile`.
+
 ## Prerequisites
 
 Before deploying, make sure you have:
@@ -17,8 +21,7 @@ Before deploying, make sure you have:
 
 Make sure these files exist in your repository:
 - ✅ `render.yaml` - Render configuration
-- ✅ `requirements.txt` - Python dependencies
-- ✅ `pyproject.toml` - Project configuration
+- ✅ `pyproject.toml` - Project configuration and dependencies
 - ✅ `app.py` - FastAPI application
 - ✅ `static/` folder with `index.html`, `style.css`, `app.js`
 - ✅ `src/ai_news_aggregator/` - Core application code
@@ -115,7 +118,7 @@ You should see the AI News Aggregator web interface.
 
 **Error**: `No module named 'crewai'`
 
-**Solution**: Check that `requirements.txt` is properly formatted and committed to your repository.
+**Solution**: Check that `pyproject.toml`'s dependencies are correct and committed to your repository.
 
 #### 2. Application Crashes on Startup
 

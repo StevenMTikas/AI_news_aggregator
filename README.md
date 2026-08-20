@@ -10,14 +10,23 @@ pinned: false
 
 # AI News Aggregator - Blog Post Generator
 
-An AI-powered blog post generator that creates engaging, conversational articles about AI and its impact on everyday life. Built with CrewAI and powered by GPT-4o-mini.
+An AI-powered content generator that creates structured, ready-to-publish blog posts for any of
+your own **projects** — each with its own audience, tone, and branding. Built with CrewAI and
+powered by GPT-4o-mini.
 
 ## 🎯 What It Does
 
 This project uses AI agents to:
-1. **Research** the latest AI developments and their real-world applications
-2. **Write** engaging blog posts formatted for GitHub Pages (Jekyll)
-3. **Save** posts to the `output/` folder, ready for publishing
+1. **Research** current developments, trends, and real-world examples for your topic
+2. **Write** a structured post (title, hook, sections with pull-quotes, key takeaways, tags,
+   sources) tailored to a specific project's audience and tone
+3. **Save** a Jekyll-ready `.md` file to `output/`, and expose the full structured content over
+   the API for other tools (e.g. a social-media repurposing tool) to consume
+
+Content generation is organized around **projects** — reusable profiles (audience, tone,
+category tags, author, target word count) you set up once via the admin dashboard and select
+each time you generate content. This is what lets the same generator serve multiple unrelated
+projects instead of always writing in one fixed voice.
 
 ## 🌐 Two Ways to Use
 
@@ -54,11 +63,17 @@ Get your API keys:
 python start_web.py
 ```
 
-### 4. Open Your Browser
+### 4. Create a Project
+
+Open **http://localhost:8000/admin** and create at least one project (audience, tone, category
+tags, author, target word count). Generation requires selecting a project — there's no more
+generic fallback.
+
+### 5. Generate Content
 
 Navigate to: **http://localhost:8000**
 
-You'll see a beautiful web interface where you can:
+- ✅ Pick your project
 - ✅ Enter your blog topic
 - ✅ Watch real-time progress
 - ✅ Download generated blog posts
@@ -68,19 +83,21 @@ You'll see a beautiful web interface where you can:
 
 ## 🚀 Quick Start - Command Line
 
-### 1. Install and Configure
+### 1. Install, Configure, and Create a Project
 
-Follow steps 1-2 from the Web Interface section above.
+Follow steps 1-2 and 4 from the Web Interface section above (a project must exist before you can
+generate anything — creating one is currently only possible through `/admin` or the
+`/api/projects` API, not the CLI).
 
 ### 2. Run the Generator
 
-```bash
-crewai run
-```
+The `crewai run` / `ai_news_aggregator` console scripts call
+[`main.run()`](src/ai_news_aggregator/main.py), which now **requires a project slug** — there's
+no way to pass one through those bare commands yet (tracked in
+[future-ideas.md](future-ideas.md)), so run it directly instead:
 
-Or using Python directly:
 ```bash
-python -m ai_news_aggregator.main
+python -c "from ai_news_aggregator.main import run; run('your-project-slug', 'Your topic here')"
 ```
 
 ### 3. Find Your Blog Post
@@ -92,37 +109,98 @@ output/YYYY-MM-DD-[topic-slug]-blog-post.md
 
 ## 📝 Output Format
 
-Blog posts are formatted for GitHub Pages with Jekyll front matter:
+Each generation produces a structured object (title, hook, sections with optional pull-quotes,
+key takeaways, an optional call to action, tags, and sources) — see the **Structured Output &
+the API** section below. That structure is rendered to a Jekyll-ready `.md` file for `output/`,
+using the selected project's author and category tags:
 
 ```markdown
 ---
 title: "Your Blog Post Title"
-date: 2025-10-10
-categories: [AI, Technology, Everyday Life]
-author: AI News Aggregator
+date: 2026-08-14
+categories: [Productivity, SaaS]
+author: Jane Doe
 layout: post
 ---
 
-Your engaging blog content here...
+Your engaging hook sentence...
+
+## Section Heading
+Section body...
+
+> An optional pull-quote lifted from this section.
+
+## Key Takeaways
+
+- Key point one
+- Key point two
 ```
 
 ## 🤖 The AI Agents
 
 ### Keyword Researcher Agent
 - **Model**: GPT-4o-mini
-- **Role**: Finds relevant, trending keywords for the topic, checking `knowledge/keywords_tracker.json` to avoid duplicating recently covered topics
+- **Role**: Finds relevant, trending keywords for the topic and the project's audience
 - **Output**: Keyword research report used to guide the researcher and blog writer
 
 ### Researcher Agent
 - **Model**: GPT-4o-mini
-- **Role**: Finds latest AI developments and real-world applications, guided by the keyword research
-- **Focus**: How AI impacts everyday life (home, work, health, education)
+- **Role**: Finds latest developments and real-world applications relevant to the project's audience, guided by the keyword research
 
 ### Blog Writer Agent
 - **Model**: GPT-4o-mini
-- **Role**: Creates engaging, conversational blog posts
-- **Style**: Warm, friendly, accessible to non-technical readers
-- **Length**: 600-1000 words
+- **Role**: Writes a structured post in the project's tone, for the project's audience, attributed to the project's author
+- **Output**: A `BlogContent` object (see **Structured Output & the API** below) — not freeform markdown
+
+All three agents are parameterized by the selected project — audience, tone, author, category
+tags, and target word count come from the `ProjectProfile` you set up in `/admin`, not from
+hardcoded text in the YAML config.
+
+## 🗂️ Projects
+
+A project is a reusable content profile:
+
+| Field | Purpose |
+|---|---|
+| `slug` | Unique ID, set at creation, immutable |
+| `name` | Display name |
+| `audience` | Who the content is for, e.g. "solo developers evaluating dev tools" |
+| `tone` | e.g. "conversational", "technical", "playful" |
+| `category_tags` | Default categories/hashtags for this project |
+| `author` | Attribution used in generated front matter |
+| `target_word_count` | Approximate length to aim for |
+| `notes` | Anything else worth steering the agents with |
+
+Manage projects at **http://localhost:8000/admin** (list, create, edit, delete — deleting a
+project only removes its profile, already-generated `output/*.md` files are untouched). The same
+operations are available as a JSON API at `/api/projects` if you want to manage projects
+programmatically.
+
+## 🔌 Structured Output & the API
+
+Generation no longer returns freeform markdown from the API — `GET /api/result/{task_id}`
+returns a typed `BlogContent` object:
+
+```json
+{
+  "task_id": "...",
+  "download_url": "/download/2026-08-14-my-post-blog-post.md",
+  "content": {
+    "title": "...",
+    "meta_description": "...",
+    "hook": "...",
+    "sections": [{"heading": "...", "body": "...", "pull_quote": "..."}],
+    "key_points": ["..."],
+    "call_to_action": "...",
+    "tags": ["..."],
+    "sources": ["..."]
+  }
+}
+```
+
+This is meant to be consumed by other tools (e.g. something that chops a post into
+platform-specific social posts) without having to re-parse markdown. Full interactive API docs,
+including the project CRUD endpoints, are auto-generated by FastAPI at **`/docs`**.
 
 ## 💰 Cost
 
@@ -135,8 +213,7 @@ AI_news_aggregator/
 ├── app.py                           # FastAPI web application
 ├── start_web.py                     # Web server launcher
 ├── pyproject.toml                   # Project dependencies + pytest config
-├── requirements.txt                 # Render deployment dependencies
-├── render.yaml                      # Render deployment config
+├── render.yaml                      # Render deployment config (installs via pyproject.toml)
 ├── Dockerfile                       # Container image (Cloud Run / HF Spaces)
 ├── .dockerignore                    # Files excluded from the Docker build
 ├── .env                             # Your API keys (create this)
@@ -145,30 +222,41 @@ AI_news_aggregator/
 ├── GOOGLE_CLOUD_RUN_DEPLOYMENT.md   # Google Cloud Run deployment guide (free, private)
 ├── HUGGINGFACE_DEPLOYMENT.md        # Hugging Face Spaces guide (requires paid PRO)
 ├── future-ideas.md                  # Features referenced in docs but not yet built
+├── package.json                     # JS test tooling (vitest + jsdom)
+├── vitest.config.js
 ├── static/                          # Web interface files
-│   ├── index.html
+│   ├── index.html                   # Generator page (requires picking a project)
+│   ├── admin.html                   # Project management dashboard
 │   ├── style.css
-│   └── app.js
+│   ├── app.js
+│   ├── admin.js
+│   └── tests/                       # Vitest tests for app.js/admin.js
 ├── src/ai_news_aggregator/          # Core application
 │   ├── main.py                      # Pipeline entry point (build_default_inputs, run_pipeline)
 │   ├── cli.py                       # Command-line entry point
 │   ├── crew.py                      # Agent and task definitions
+│   ├── projects.py                  # ProjectProfile model + YAML-backed CRUD storage
+│   ├── schemas.py                   # BlogContent/Section structured output models
 │   ├── tools/                       # Custom CrewAI tools (currently empty)
 │   └── config/
 │       ├── agents.yaml              # Agent configurations
-│       └── tasks.yaml               # Task definitions
-├── tests/                           # Pytest test suite (test_main.py, test_app.py)
-├── output/                          # Generated blog posts
-│   └── YYYY-MM-DD-[topic]-blog-post.md
-└── knowledge/                       # Keyword tracking
-    └── keywords_tracker.json
+│       ├── tasks.yaml               # Task definitions
+│       └── projects/                # One YAML file per project (created via /admin)
+├── tests/                           # Pytest test suite
+└── output/                          # Generated blog posts
+    └── YYYY-MM-DD-[topic]-blog-post.md
 ```
 
 ## 🎨 Customization
 
+### Change Audience, Tone, or Branding
+
+These are per-project now, not hardcoded — create or edit a project in `/admin` (or via
+`/api/projects`) rather than editing YAML.
+
 ### Change the Topic
 
-For the web interface, just enter your topic in the form.
+For the web interface, just enter your topic in the form alongside your chosen project.
 
 For the command line, pass a topic to `run()`, or edit the default in [`src/ai_news_aggregator/main.py`](src/ai_news_aggregator/main.py):
 
@@ -177,11 +265,16 @@ DEFAULT_TOPIC = "Your custom topic here"
 DEFAULT_SLUG = "Your custom topic here"
 ```
 
-### Modify Agent Behavior
+### Modify Agent Behavior at the Prompt Level
 
 Edit the YAML files in `src/ai_news_aggregator/config/`:
-- `agents.yaml` - Change agent roles, goals, and backstories
-- `tasks.yaml` - Modify task descriptions and expected outputs
+- `agents.yaml` - Change agent roles, goals, and backstories (these reference `{audience}`,
+  `{tone}`, `{project_name}`, etc. — keep every placeholder you use here in sync with the keys
+  `build_default_inputs()` supplies, or CrewAI will raise a `ValueError` on generation)
+- `tasks.yaml` - Modify task descriptions and expected outputs. `blog_writer_task` also declares
+  `output_pydantic: BlogContent`, which forces its output into the schema in
+  [`schemas.py`](src/ai_news_aggregator/schemas.py) — change the schema and this reference
+  together if you need different output fields.
 
 ### Change the AI Model
 
@@ -193,21 +286,33 @@ llm: gpt-4o  # or gpt-4, gpt-3.5-turbo, etc.
 ## 📊 Example Output
 
 The blog posts are designed to be:
-- ✅ **Engaging** - Conversational tone, like talking to a friend
-- ✅ **Accessible** - No technical jargon, easy to understand
+- ✅ **Engaging** - Tone matched to the project (conversational, technical, playful, etc.)
+- ✅ **Accessible** - Written for the project's specific audience
 - ✅ **Practical** - Real-world examples and applications
 - ✅ **Current** - Based on latest developments
-- ✅ **Ready to Publish** - Formatted for GitHub Pages
+- ✅ **Ready to Publish** - Jekyll `.md` file, plus structured JSON via the API
 
 ## 🧪 Running Tests
 
+**Python** (`app.py`, `main.py`, `cli.py`, `crew.py`, `projects.py`):
 ```bash
 pip install -e ".[test]"
 pytest -v
 ```
+Covers project CRUD, the CLI, output rendering/saving, the crew's YAML config (agents/tasks
+build correctly and every `{placeholder}` interpolates — catches drift between `agents.yaml`/
+`tasks.yaml` and `build_default_inputs()` without an LLM call), and all `app.py` endpoints —
+everything mocked so it never makes real OpenAI/Serper calls.
 
-Covers the helper functions in `main.py` (topic slugging, output saving) and the FastAPI
-endpoints in `app.py` (mocked so it never makes real OpenAI/Serper calls).
+**Frontend** (`static/app.js`, `static/admin.js`):
+```bash
+npm install
+npm test
+```
+Covers the pure logic (topic-to-slug conversion, content preview rendering, HTML escaping) by
+loading the real `index.html`/`admin.html` into jsdom, so a mismatched element ID would fail the
+test too. The DOM-wiring/event-handling code itself isn't covered — that's verified manually in
+a browser.
 
 ## 🔧 Troubleshooting
 
@@ -221,6 +326,10 @@ Make sure you created a `.env` file in the project's root directory with your AP
 
 ### "Permission denied" when creating output folder
 The script will automatically create the `output/` folder in the root directory.
+
+### "Unknown project" / no projects in the dropdown
+Generation requires an existing project. Create one at `/admin` first — the generator form will
+show an error instead of a submittable form if none exist yet.
 
 ## 📚 Learn More
 
@@ -265,7 +374,7 @@ Curious what's planned but not built yet? See [future-ideas.md](future-ideas.md)
 ---
 
 **Ready to get started?**
-- 🌐 **Web Interface**: `python start_web.py` → http://localhost:8000
-- 💻 **Command Line**: `crewai run`
+- 🌐 **Web Interface**: `python start_web.py` → http://localhost:8000 (create a project at `/admin` first)
+- 💻 **Command Line**: `python -c "from ai_news_aggregator.main import run; run('your-project-slug')"`
 - 🚀 **Deploy**: See [GOOGLE_CLOUD_RUN_DEPLOYMENT.md](GOOGLE_CLOUD_RUN_DEPLOYMENT.md)
 

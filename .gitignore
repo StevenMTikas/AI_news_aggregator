@@ -26,6 +26,9 @@ venv/
 ENV/
 env/
 
+# Node (frontend test tooling)
+node_modules/
+
 # IDE
 .idea/
 .vscode/

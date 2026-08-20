@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manage Projects - AI News Aggregator</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="logo">
+                <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect width="40" height="40" rx="8" fill="url(#gradient)"/>
+                    <path d="M20 10L28 18L20 26L12 18L20 10Z" fill="white" opacity="0.9"/>
+                    <path d="M20 14L24 18L20 22L16 18L20 14Z" fill="white"/>
+                    <defs>
+                        <linearGradient id="gradient" x1="0" y1="0" x2="40" y2="40">
+                            <stop stop-color="#667eea"/>
+                            <stop offset="1" stop-color="#764ba2"/>
+                        </linearGradient>
+                    </defs>
+                </svg>
+                <h1>Manage Projects</h1>
+            </div>
+            <p class="subtitle">Each project sets the audience, tone, and branding used when generating content</p>
+            <nav class="header-nav"><a href="/">&larr; Back to Generator</a></nav>
+        </header>
+        <main class="main-content">
+            <div class="card" id="listCard">
+                <h2>Projects</h2>
+                <div id="projectListContainer">
+                    <p class="empty-state">Loading...</p>
+                </div>
+                <button class="btn btn-primary" id="newProjectBtn">
+                    <span class="btn-text">New Project</span>
+                    <span class="btn-icon">➕</span>
+                </button>
+            </div>
+
+            <div class="card hidden" id="formCard">
+                <h2 id="formTitle">New Project</h2>
+                <form id="projectForm">
+                    <div class="form-group">
+                        <label for="slug">Slug</label>
+                        <input type="text" id="slug" name="slug" placeholder="e.g., acme-app-launch" required pattern="[a-z0-9-]+">
+                        <small>Lowercase letters, numbers, and hyphens only. Cannot be changed after creation.</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="name">Project Name</label>
+                        <input type="text" id="name" name="name" placeholder="e.g., Acme App Launch" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="audience">Audience</label>
+                        <input type="text" id="audience" name="audience" placeholder="e.g., solo developers evaluating dev tools" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="tone">Tone</label>
+                        <input type="text" id="tone" name="tone" placeholder="e.g., conversational, technical, playful" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="categoryTags">Category Tags</label>
+                        <input type="text" id="categoryTags" name="categoryTags" placeholder="e.g., Productivity, SaaS, Tools">
+                        <small>Comma-separated.</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="author">Author</label>
+                        <input type="text" id="author" name="author" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="targetWordCount">Target Word Count</label>
+                        <input type="number" id="targetWordCount" name="targetWordCount" value="800" min="100" step="50">
+                    </div>
+                    <div class="form-group">
+                        <label for="notes">Notes (optional)</label>
+                        <textarea id="notes" name="notes" placeholder="Anything else worth steering the agents with"></textarea>
+                    </div>
+                    <div class="action-buttons">
+                        <button type="submit" class="btn btn-primary" id="saveProjectBtn">
+                            <span class="btn-text">Save Project</span>
+                        </button>
+                        <button type="button" class="btn btn-secondary" id="cancelFormBtn">
+                            <span class="btn-text">Cancel</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <div class="card error-card hidden" id="errorCard">
+                <h2>⚠️ Something Went Wrong</h2>
+                <div class="error-message" id="errorMessage"></div>
+                <button class="btn btn-secondary" id="dismissErrorBtn">
+                    <span class="btn-text">Dismiss</span>
+                </button>
+            </div>
+        </main>
+        <footer class="footer">
+            <p>Powered by <strong>CrewAI</strong> & <strong>GPT-4o-mini</strong></p>
+        </footer>
+    </div>
+    <script src="/static/admin.js"></script>
+</body>
+</html>

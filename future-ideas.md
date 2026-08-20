@@ -15,8 +15,8 @@ test = "ai_news_aggregator.main:test"
 ```
 
 None of `train`, `replay`, or `test` exist in [`src/ai_news_aggregator/main.py`](src/ai_news_aggregator/main.py) —
-only `build_default_inputs`, `slugify_title`, `save_blog_post`, `run_pipeline`, and `run` are defined.
-Running any of these three commands today fails immediately. This is CrewAI's standard project
+only `build_default_inputs`, `render_jekyll_markdown`, `save_blog_post`, `run_pipeline`, and `run`
+are defined. Running any of these three commands today fails immediately. This is CrewAI's standard project
 scaffolding (train the crew over N iterations, replay a specific task from a previous run, test
 outputs against different LLMs) — worth either implementing them (CrewAI's `Crew` object has
 built-in `train()`/`test()` support and `replay_from_task_id`) or removing the entry points from
@@ -26,7 +26,7 @@ built-in `train()`/`test()` support and `replay_from_task_id`) or removing the e
 
 [DEPLOYMENT.md](DEPLOYMENT.md) (Security Best Practices) suggests adding rate limiting to
 `/api/generate` to prevent abuse, with `pip install slowapi` as the suggested approach. Not
-implemented — `slowapi` isn't in `requirements.txt`/`pyproject.toml`, and `app.py` has no
+implemented — `slowapi` isn't in `pyproject.toml`'s dependencies, and `app.py` has no
 per-IP or per-key throttling. Since each generation call costs real OpenAI/Serper spend, an
 unthrottled public endpoint is a real cost-abuse risk.
 
@@ -43,19 +43,17 @@ step described in the deployment guide was never applied to the code.
 
 ## 4. Persistent/shared task queue (e.g. Redis)
 
-[DEPLOYMENT_CHANGES_SUMMARY.md](DEPLOYMENT_CHANGES_SUMMARY.md) (Optimization Options) lists
-"Add Redis for task queue (if scaling needed)." Today, task state lives entirely in an
-in-memory Python dict in `app.py` (`tasks: Dict[str, Dict] = {}`), which means all in-flight
-and completed task records are lost on restart and can't be shared across multiple worker
-processes/instances.
+Task state lives entirely in an in-memory Python dict in `app.py`
+(`tasks: Dict[str, Dict] = {}`), which means all in-flight and completed task records are lost
+on restart and can't be shared across multiple worker processes/instances. Worth revisiting if
+this ever runs with more than one worker (Cloud Run deployment already pins `--max-instances 1`
+specifically to work around this).
 
 ## 5. Response/generation caching
 
-Mentioned in both [DEPLOYMENT_CHANGES_SUMMARY.md](DEPLOYMENT_CHANGES_SUMMARY.md)
-("Implement caching for repeated queries") and
-[PRE_DEPLOYMENT_CHECKLIST.md](PRE_DEPLOYMENT_CHECKLIST.md) ("Use caching for API responses if
-applicable"). No caching layer exists anywhere in `app.py` or `crew.py` — every request re-runs
-the full keyword research → research → writing pipeline, even for a repeated/similar topic.
+No caching layer exists anywhere in `app.py` or `crew.py` — every request re-runs the full
+keyword research → research → writing pipeline, even for a repeated/similar topic within the
+same project.
 
 ## 6. Configurable model via `OPENAI_MODEL_NAME` env var
 
@@ -70,3 +68,21 @@ directly in each agent's config in
 [`src/ai_news_aggregator/config/agents.yaml`](src/ai_news_aggregator/config/agents.yaml).
 Changing the model today requires editing the YAML, not setting an env var, despite the
 template implying otherwise.
+
+## 7. No CLI flag for selecting a project
+
+`main.run()` and `cli.run()` now require a `project_slug` argument (added alongside the
+multi-project feature), but the registered console scripts in `pyproject.toml`
+(`ai_news_aggregator` and `crewai run` itself) call `run()` with no arguments —
+there's no argument parsing to supply a project slug from the command line. Today the only way
+to run generation outside the web UI is a Python one-liner
+(`python -c "from ai_news_aggregator.main import run; run('slug')"`), documented as such in
+[README.md](README.md). Worth adding real CLI argument parsing (`argparse`/`click`/`typer`) if
+command-line usage becomes a real workflow, rather than just the web admin dashboard.
+
+## 8. No way to create/edit projects from the CLI
+
+Project management only exists via `/admin` or the `/api/projects` HTTP API
+([`src/ai_news_aggregator/projects.py`](src/ai_news_aggregator/projects.py) has the underlying
+`create_project`/`update_project`/`delete_project` functions) — there's no CLI equivalent. Minor
+gap given the web dashboard covers the same ground, but worth noting for headless/scripted setups.
