@@ -7,10 +7,10 @@ interpolation step directly.
 """
 import pytest
 
-from src.ai_news_aggregator.crew import AiNewsAggregator
-from src.ai_news_aggregator.main import build_default_inputs
-from src.ai_news_aggregator.projects import ProjectProfile
-from src.ai_news_aggregator.schemas import BlogContent
+from src.contentforge.crew import ContentForgeCrew
+from src.contentforge.main import build_default_inputs
+from src.contentforge.projects import ProjectProfile
+from src.contentforge.schemas import BlogContent
 
 
 @pytest.fixture(autouse=True)
@@ -32,15 +32,27 @@ def make_project() -> ProjectProfile:
 
 
 def test_crew_builds_with_expected_agents_and_tasks():
-    crew = AiNewsAggregator().crew()
+    crew = ContentForgeCrew().crew()
     assert len(crew.agents) == 3
     assert len(crew.tasks) == 3
 
 
 def test_blog_writer_task_has_output_pydantic_wired_to_blog_content():
-    crew = AiNewsAggregator().crew()
+    crew = ContentForgeCrew().crew()
     blog_writer_task = next(t for t in crew.tasks if t.output_pydantic is not None)
     assert blog_writer_task.output_pydantic is BlogContent
+
+
+def test_blog_writer_task_receives_both_research_and_keyword_context():
+    """
+    The writer's prompt references the keyword research directly ("tags: drawn from the
+    keyword research"), so the keyword task must be in its context -- not only reachable
+    transitively through the researcher's prose.
+    """
+    crew = ContentForgeCrew().crew()
+    blog_writer_task = next(t for t in crew.tasks if t.output_pydantic is not None)
+    context_names = {t.name for t in blog_writer_task.context}
+    assert context_names == {"research_task", "keyword_research_task"}
 
 
 def test_all_placeholders_interpolate_without_error():
@@ -50,7 +62,7 @@ def test_all_placeholders_interpolate_without_error():
     ValueError (missing key) here, or would silently do nothing (extra unused key -- not
     an error, but worth knowing about if it happens).
     """
-    crew = AiNewsAggregator().crew()
+    crew = ContentForgeCrew().crew()
     project = make_project()
     inputs = build_default_inputs("Test Topic", project)
 

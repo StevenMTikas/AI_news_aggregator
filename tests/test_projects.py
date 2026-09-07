@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from src.ai_news_aggregator import projects
-from src.ai_news_aggregator.projects import (
+from src.contentforge import projects
+from src.contentforge.projects import (
     ProjectNotFoundError,
     ProjectProfile,
     ProjectSlugConflictError,

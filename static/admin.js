@@ -1,4 +1,4 @@
-// AI News Aggregator - Admin Dashboard
+// ContentForge - Admin Dashboard
 
 let editingSlug = null;
 

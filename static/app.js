@@ -1,4 +1,4 @@
-// AI News Aggregator - Frontend JavaScript
+// ContentForge - Frontend JavaScript
 
 let currentTaskId = null;
 let pollingInterval = null;

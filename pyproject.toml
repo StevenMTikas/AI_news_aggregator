@@ -1,7 +1,7 @@
 [project]
-name = "ai_news_aggregator"
+name = "contentforge"
 version = "0.1.0"
-description = "ai_news_aggregator using crewAI"
+description = "ContentForge - multi-format content generation from persisted research"
 authors = [{ name = "Your Name", email = "you@example.com" }]
 requires-python = ">=3.10,<3.14"
 dependencies = [
@@ -20,17 +20,14 @@ test = [
 ]
 
 [project.scripts]
-ai_news_aggregator = "ai_news_aggregator.main:run"
-train = "ai_news_aggregator.main:train"
-replay = "ai_news_aggregator.main:replay"
-test = "ai_news_aggregator.main:test"
+contentforge = "contentforge.main:run"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[tool.crewai]
-type = "crew"
+[tool.hatch.build.targets.wheel]
+packages = ["src/contentforge"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

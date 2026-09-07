@@ -3,9 +3,9 @@ from pathlib import Path
 
 import pytest
 
-from src.ai_news_aggregator import main
-from src.ai_news_aggregator.projects import ProjectProfile
-from src.ai_news_aggregator.schemas import BlogContent, Section
+from src.contentforge import main
+from src.contentforge.projects import ProjectProfile
+from src.contentforge.schemas import BlogContent, Section
 
 
 class FakeResult:
@@ -73,14 +73,35 @@ def test_render_jekyll_markdown_includes_front_matter_and_sections():
     markdown = main.render_jekyll_markdown(content, project, "2026-08-06")
 
     assert 'title: "How AI Helps Restaurants"' in markdown
+    assert 'description: "A short summary of the post."' in markdown
     assert "date: 2026-08-06" in markdown
     assert "categories: [Productivity, SaaS]" in markdown
+    assert "tags: [AI, Restaurants]" in markdown
     assert "author: Jane Doe" in markdown
     assert "## Section One" in markdown
     assert "Body text." in markdown
     assert "> A quote." in markdown
     assert "- Point one" in markdown
     assert "Try it today." in markdown
+    assert "## Sources" in markdown
+    assert "- https://example.com" in markdown
+
+
+def test_render_jekyll_markdown_omits_sources_section_when_empty():
+    markdown = main.render_jekyll_markdown(
+        make_content(sources=[]), make_project(), "2026-08-06"
+    )
+    assert "## Sources" not in markdown
+    assert "tags: []" not in markdown  # tags still populated from content.tags
+
+
+def test_render_jekyll_markdown_escapes_quotes_in_front_matter():
+    content = make_content(
+        title='The "Best" AI Tools', meta_description='Why they call it "smart"'
+    )
+    markdown = main.render_jekyll_markdown(content, make_project(), "2026-08-06")
+    assert r'title: "The \"Best\" AI Tools"' in markdown
+    assert r'description: "Why they call it \"smart\""' in markdown
 
 
 def test_save_blog_post_writes_file(tmp_path: Path):
@@ -123,11 +144,11 @@ def test_run_pipeline_saves_crew_result(tmp_path: Path, monkeypatch: pytest.Monk
             captured_inputs.update(inputs)
             return fake_result
 
-    class FakeAiNewsAggregator:
+    class FakeContentForgeCrew:
         def crew(self):
             return FakeCrew()
 
-    monkeypatch.setattr(main, "AiNewsAggregator", FakeAiNewsAggregator)
+    monkeypatch.setattr(main, "ContentForgeCrew", FakeContentForgeCrew)
 
     inputs = main.build_default_inputs("Pipeline Topic", project)
     result, output_path = main.run_pipeline(inputs, project, output_dir=tmp_path)

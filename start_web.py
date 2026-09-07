@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Quick start script for the AI News Aggregator web interface.
+Quick start script for the ContentForge web interface.
 Run this from the root directory to start the web server with optimal settings.
 """
 import sys
@@ -21,7 +21,7 @@ def main():
         if response.lower() != 'y':
             sys.exit(1)
 
-    print("🚀 Starting AI News Aggregator Web Interface...")
+    print("🚀 Starting ContentForge Web Interface...")
     print("📍 Server will be available at: http://localhost:8000")
     print("🛑 Press Ctrl+C to stop the server\n")
 

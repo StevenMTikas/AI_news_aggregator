@@ -4,17 +4,21 @@ Features or hooks that are referenced somewhere in this project (docs, config, s
 but aren't actually implemented yet. Compiled by scanning the codebase and docs for things
 promised but not built.
 
+> Items 1–8 below are all scheduled to be resolved by the rewrite in
+> [ARCHITECTURE_PLAN.md](ARCHITECTURE_PLAN.md) — see its §13 mapping. This file will be
+> pruned as those phases land.
+
 ## 1. `train` / `replay` / `test` CLI commands
 
 `pyproject.toml` registers these as installable console scripts:
 
 ```toml
-train = "ai_news_aggregator.main:train"
-replay = "ai_news_aggregator.main:replay"
-test = "ai_news_aggregator.main:test"
+train = "contentforge.main:train"
+replay = "contentforge.main:replay"
+test = "contentforge.main:test"
 ```
 
-None of `train`, `replay`, or `test` exist in [`src/ai_news_aggregator/main.py`](src/ai_news_aggregator/main.py) —
+None of `train`, `replay`, or `test` exist in [`src/contentforge/main.py`](src/contentforge/main.py) —
 only `build_default_inputs`, `render_jekyll_markdown`, `save_blog_post`, `run_pipeline`, and `run`
 are defined. Running any of these three commands today fails immediately. This is CrewAI's standard project
 scaffolding (train the crew over N iterations, replay a specific task from a previous run, test
@@ -65,7 +69,7 @@ same project.
 
 But nothing in the code reads this variable — the model is hardcoded as `llm: gpt-4o-mini`
 directly in each agent's config in
-[`src/ai_news_aggregator/config/agents.yaml`](src/ai_news_aggregator/config/agents.yaml).
+[`src/contentforge/config/agents.yaml`](src/contentforge/config/agents.yaml).
 Changing the model today requires editing the YAML, not setting an env var, despite the
 template implying otherwise.
 
@@ -73,16 +77,16 @@ template implying otherwise.
 
 `main.run()` and `cli.run()` now require a `project_slug` argument (added alongside the
 multi-project feature), but the registered console scripts in `pyproject.toml`
-(`ai_news_aggregator` and `crewai run` itself) call `run()` with no arguments —
+(`contentforge` and `crewai run` itself) call `run()` with no arguments —
 there's no argument parsing to supply a project slug from the command line. Today the only way
 to run generation outside the web UI is a Python one-liner
-(`python -c "from ai_news_aggregator.main import run; run('slug')"`), documented as such in
+(`python -c "from contentforge.main import run; run('slug')"`), documented as such in
 [README.md](README.md). Worth adding real CLI argument parsing (`argparse`/`click`/`typer`) if
 command-line usage becomes a real workflow, rather than just the web admin dashboard.
 
 ## 8. No way to create/edit projects from the CLI
 
 Project management only exists via `/admin` or the `/api/projects` HTTP API
-([`src/ai_news_aggregator/projects.py`](src/ai_news_aggregator/projects.py) has the underlying
+([`src/contentforge/projects.py`](src/contentforge/projects.py) has the underlying
 `create_project`/`update_project`/`delete_project` functions) — there's no CLI equivalent. Minor
 gap given the web dashboard covers the same ground, but worth noting for headless/scripted setups.

@@ -12,8 +12,8 @@ BlogContent = output_pydantic(_BlogContent)
 
 
 @CrewBase
-class AiNewsAggregator:
-    """AiNewsAggregator crew"""
+class ContentForgeCrew:
+    """ContentForgeCrew crew"""
 
     agents: List[BaseAgent]
     tasks: List[Task]
@@ -58,15 +58,14 @@ class AiNewsAggregator:
 
     @task
     def blog_writer_task(self) -> Task:
-        research = self.research_task()
         return Task(
             config=self.tasks_config["blog_writer_task"],  # type: ignore[index]
-            context=[research],
+            context=[self.research_task(), self.keyword_research_task()],
         )
 
     @crew
     def crew(self) -> Crew:
-        """Creates the AiNewsAggregator crew"""
+        """Creates the ContentForgeCrew crew"""
         return Crew(
             agents=self.agents,
             tasks=self.tasks,

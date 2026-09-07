@@ -1,18 +1,9 @@
----
-title: AI News Aggregator
-emoji: 📰
-colorFrom: indigo
-colorTo: purple
-sdk: docker
-app_port: 7860
-pinned: false
----
+# ContentForge
 
-# AI News Aggregator - Blog Post Generator
-
-An AI-powered content generator that creates structured, ready-to-publish blog posts for any of
-your own **projects** — each with its own audience, tone, and branding. Built with CrewAI and
-powered by GPT-4o-mini.
+An AI content generator that creates structured, ready-to-publish blog posts for any of your
+own **projects** — each with its own audience, tone, and branding. Currently built with CrewAI
+and GPT-4o-mini; a plain-Python rewrite with persisted research and multi-format output is
+underway — see [ARCHITECTURE_PLAN.md](ARCHITECTURE_PLAN.md).
 
 ## 🎯 What It Does
 
@@ -91,13 +82,12 @@ generate anything — creating one is currently only possible through `/admin` o
 
 ### 2. Run the Generator
 
-The `crewai run` / `ai_news_aggregator` console scripts call
-[`main.run()`](src/ai_news_aggregator/main.py), which now **requires a project slug** — there's
-no way to pass one through those bare commands yet (tracked in
-[future-ideas.md](future-ideas.md)), so run it directly instead:
+The `contentforge` console script calls [`main.run()`](src/contentforge/main.py), which
+**requires a project slug** — there's no argument parsing on the bare command yet (a proper
+CLI lands in Phase 9 of [ARCHITECTURE_PLAN.md](ARCHITECTURE_PLAN.md)), so run it directly:
 
 ```bash
-python -c "from ai_news_aggregator.main import run; run('your-project-slug', 'Your topic here')"
+python -c "from contentforge.main import run; run('your-project-slug', 'Your topic here')"
 ```
 
 ### 3. Find Your Blog Post
@@ -109,16 +99,20 @@ output/YYYY-MM-DD-[topic-slug]-blog-post.md
 
 ## 📝 Output Format
 
-Each generation produces a structured object (title, hook, sections with optional pull-quotes,
-key takeaways, an optional call to action, tags, and sources) — see the **Structured Output &
-the API** section below. That structure is rendered to a Jekyll-ready `.md` file for `output/`,
-using the selected project's author and category tags:
+Each generation produces a structured object (title, meta description, hook, sections with
+optional pull-quotes, key takeaways, an optional call to action, tags, and sources) — see the
+**Structured Output & the API** section below. That structure is rendered to a Jekyll-ready
+`.md` file for `output/`. Front matter carries the post's meta description and keyword-derived
+`tags`; `categories` comes from the selected project's `category_tags`, and `author` from the
+project:
 
 ```markdown
 ---
 title: "Your Blog Post Title"
+description: "The ~150-character meta description, reused as an SEO/social summary."
 date: 2026-08-14
 categories: [Productivity, SaaS]
+tags: [ai keyword, long-tail phrase, related term]
 author: Jane Doe
 layout: post
 ---
@@ -134,7 +128,13 @@ Section body...
 
 - Key point one
 - Key point two
+
+## Sources
+
+- https://example.com/article
 ```
+
+(The `## Sources` section is omitted when the research returned no sources.)
 
 ## 🤖 The AI Agents
 
@@ -209,41 +209,38 @@ Using GPT-4o-mini, each blog post costs approximately **$0.01-0.05** to generate
 ## 📁 Project Structure
 
 ```
-AI_news_aggregator/
-├── app.py                           # FastAPI web application
-├── start_web.py                     # Web server launcher
-├── pyproject.toml                   # Project dependencies + pytest config
-├── render.yaml                      # Render deployment config (installs via pyproject.toml)
-├── Dockerfile                       # Container image (Cloud Run / HF Spaces)
-├── .dockerignore                    # Files excluded from the Docker build
-├── .env                             # Your API keys (create this)
-├── ENV_TEMPLATE.txt                 # Template for .env
-├── DEPLOYMENT.md                    # Render deployment guide
-├── GOOGLE_CLOUD_RUN_DEPLOYMENT.md   # Google Cloud Run deployment guide (free, private)
-├── HUGGINGFACE_DEPLOYMENT.md        # Hugging Face Spaces guide (requires paid PRO)
-├── future-ideas.md                  # Features referenced in docs but not yet built
-├── package.json                     # JS test tooling (vitest + jsdom)
+contentforge/
+├── app.py                     # FastAPI web application
+├── start_web.py               # Web server launcher
+├── pyproject.toml             # Project dependencies + pytest config
+├── Dockerfile                 # Optional container image for a personal server (see DEPLOYMENT.md)
+├── .dockerignore
+├── .env                       # Your API keys (create this)
+├── ENV_TEMPLATE.txt           # Template for .env
+├── DEPLOYMENT.md              # How to run ContentForge (local-first)
+├── ARCHITECTURE_PLAN.md       # The in-progress rewrite plan
+├── future-ideas.md            # Smaller gaps, most folded into ARCHITECTURE_PLAN.md
+├── package.json               # JS test tooling (vitest + jsdom)
 ├── vitest.config.js
-├── static/                          # Web interface files
-│   ├── index.html                   # Generator page (requires picking a project)
-│   ├── admin.html                   # Project management dashboard
+├── static/                    # Web interface files
+│   ├── index.html             # Generator page (requires picking a project)
+│   ├── admin.html             # Project management dashboard
 │   ├── style.css
 │   ├── app.js
 │   ├── admin.js
-│   └── tests/                       # Vitest tests for app.js/admin.js
-├── src/ai_news_aggregator/          # Core application
-│   ├── main.py                      # Pipeline entry point (build_default_inputs, run_pipeline)
-│   ├── cli.py                       # Command-line entry point
-│   ├── crew.py                      # Agent and task definitions
-│   ├── projects.py                  # ProjectProfile model + YAML-backed CRUD storage
-│   ├── schemas.py                   # BlogContent/Section structured output models
-│   ├── tools/                       # Custom CrewAI tools (currently empty)
+│   └── tests/                 # Vitest tests for app.js/admin.js
+├── src/contentforge/          # Core application
+│   ├── main.py                # Pipeline entry point (build_default_inputs, run_pipeline)
+│   ├── cli.py                 # Command-line entry point
+│   ├── crew.py                # Agent and task definitions
+│   ├── projects.py            # ProjectProfile model + YAML-backed CRUD storage
+│   ├── schemas.py             # BlogContent/Section structured output models
+│   ├── tools/                 # Custom CrewAI tools (currently empty)
 │   └── config/
-│       ├── agents.yaml              # Agent configurations
-│       ├── tasks.yaml               # Task definitions
-│       └── projects/                # One YAML file per project (created via /admin)
-├── tests/                           # Pytest test suite
-└── output/                          # Generated blog posts
+│       ├── agents.yaml        # Agent configurations
+│       └── tasks.yaml         # Task definitions
+├── tests/                     # Pytest test suite
+└── output/                    # Generated blog posts
     └── YYYY-MM-DD-[topic]-blog-post.md
 ```
 
@@ -258,7 +255,7 @@ These are per-project now, not hardcoded — create or edit a project in `/admin
 
 For the web interface, just enter your topic in the form alongside your chosen project.
 
-For the command line, pass a topic to `run()`, or edit the default in [`src/ai_news_aggregator/main.py`](src/ai_news_aggregator/main.py):
+For the command line, pass a topic to `run()`, or edit the default in [`src/contentforge/main.py`](src/contentforge/main.py):
 
 ```python
 DEFAULT_TOPIC = "Your custom topic here"
@@ -267,13 +264,13 @@ DEFAULT_SLUG = "Your custom topic here"
 
 ### Modify Agent Behavior at the Prompt Level
 
-Edit the YAML files in `src/ai_news_aggregator/config/`:
+Edit the YAML files in `src/contentforge/config/`:
 - `agents.yaml` - Change agent roles, goals, and backstories (these reference `{audience}`,
   `{tone}`, `{project_name}`, etc. — keep every placeholder you use here in sync with the keys
   `build_default_inputs()` supplies, or CrewAI will raise a `ValueError` on generation)
 - `tasks.yaml` - Modify task descriptions and expected outputs. `blog_writer_task` also declares
   `output_pydantic: BlogContent`, which forces its output into the schema in
-  [`schemas.py`](src/ai_news_aggregator/schemas.py) — change the schema and this reference
+  [`schemas.py`](src/contentforge/schemas.py) — change the schema and this reference
   together if you need different output fields.
 
 ### Change the AI Model
@@ -337,44 +334,25 @@ show an error instead of a submittable form if none exist yet.
 - [OpenAI API Documentation](https://platform.openai.com/docs)
 - [GitHub Pages Documentation](https://docs.github.com/en/pages)
 
-## 🌐 Deploy to Production
+## 🌐 Running It
 
-Ready to deploy your AI News Aggregator to the web? Three options:
-
-### Google Cloud Run (free, private, recommended)
-See the complete guide: **[GOOGLE_CLOUD_RUN_DEPLOYMENT.md](GOOGLE_CLOUD_RUN_DEPLOYMENT.md)**
-1. Enable Cloud Run + Secret Manager on a GCP project (billing account required, won't be charged within the free tier)
-2. Store your API keys in Secret Manager
-3. `gcloud run deploy` using the repo's `Dockerfile` — deployed as private (IAM-authenticated) so only you can trigger generation
-4. Access it via `gcloud run services proxy` or a granted Google identity
-
-### Render (paid to avoid cold starts/suspension)
-See the complete guide: **[DEPLOYMENT.md](DEPLOYMENT.md)**
-1. Push to GitHub
-2. Connect Render to your repository
-3. Set environment variables
-4. Deploy!
-
-Your app will be live at: `https://your-app.onrender.com`
-
-### Hugging Face Spaces (requires a paid PRO plan)
-See the complete guide: **[HUGGINGFACE_DEPLOYMENT.md](HUGGINGFACE_DEPLOYMENT.md)**. Docker Spaces
-now require Hugging Face PRO ($9/mo+) — no longer a free option, kept here for reference.
+ContentForge is a single-operator tool with a growing local store of research and content, so
+it runs **locally** (or on one always-on machine you control), not on ephemeral-disk hosts.
+See **[DEPLOYMENT.md](DEPLOYMENT.md)** for the local setup and the optional Docker path.
 
 ## 🎉 Next Steps
 
-1. **Test locally** - Run the web interface with `python start_web.py`
-2. **Generate content** - Create your first AI blog post
+1. **Run locally** - `python start_web.py` → http://localhost:8000
+2. **Generate content** - Create a project at `/admin`, then your first blog post
 3. **Customize** - Adjust agents and tasks to match your style
-4. **Deploy** - Follow [GOOGLE_CLOUD_RUN_DEPLOYMENT.md](GOOGLE_CLOUD_RUN_DEPLOYMENT.md) (free, private) or [DEPLOYMENT.md](DEPLOYMENT.md) (Render)
-5. **Publish** - Share your AI-generated blog posts!
+4. **Publish** - Share your generated blog posts!
 
-Curious what's planned but not built yet? See [future-ideas.md](future-ideas.md).
+Curious where this is heading? See [ARCHITECTURE_PLAN.md](ARCHITECTURE_PLAN.md); smaller gaps
+are in [future-ideas.md](future-ideas.md).
 
 ---
 
 **Ready to get started?**
 - 🌐 **Web Interface**: `python start_web.py` → http://localhost:8000 (create a project at `/admin` first)
-- 💻 **Command Line**: `python -c "from ai_news_aggregator.main import run; run('your-project-slug')"`
-- 🚀 **Deploy**: See [GOOGLE_CLOUD_RUN_DEPLOYMENT.md](GOOGLE_CLOUD_RUN_DEPLOYMENT.md)
+- 💻 **Command Line**: `python -c "from contentforge.main import run; run('your-project-slug')"`
 

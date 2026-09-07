@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from src.ai_news_aggregator import cli
-from src.ai_news_aggregator.projects import ProjectNotFoundError, ProjectProfile
+from src.contentforge import cli
+from src.contentforge.projects import ProjectNotFoundError, ProjectProfile
 
 
 class FakeResult:

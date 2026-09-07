@@ -4,9 +4,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 import app as app_module
-from src.ai_news_aggregator import projects
-from src.ai_news_aggregator.projects import ProjectProfile
-from src.ai_news_aggregator.schemas import BlogContent, Section
+from src.contentforge import projects
+from src.contentforge.projects import ProjectProfile
+from src.contentforge.schemas import BlogContent, Section
 
 client = TestClient(app_module.app)
 
@@ -66,7 +66,7 @@ def existing_project() -> ProjectProfile:
 def test_read_root_serves_index_html():
     response = client.get("/")
     assert response.status_code == 200
-    assert "AI News Aggregator" in response.text or "<html" in response.text.lower()
+    assert "ContentForge" in response.text or "<html" in response.text.lower()
 
 
 def test_read_admin_serves_admin_html():
@@ -190,6 +190,34 @@ def test_get_result_returns_structured_content(monkeypatch: pytest.MonkeyPatch, 
     assert body["content"]["title"] == "Fake Blog Post"
     assert body["content"]["sections"][0]["heading"] == "Section"
     assert body["download_url"] == "/download/fake-blog-post.md"
+
+
+def test_get_result_shape_is_stable(monkeypatch: pytest.MonkeyPatch, existing_project):
+    """
+    Characterization test: pins the /api/result contract so the architecture rewrite can't
+    silently drop or rename a field. If this needs updating, that's an API change -- make it
+    deliberately.
+    """
+    monkeypatch.setattr(app_module, "run_pipeline", fake_run_pipeline)
+    task_id = client.post(
+        "/api/generate",
+        json={"topic": "AI tools for small business", "project_slug": existing_project.slug},
+    ).json()["task_id"]
+
+    body = client.get(f"/api/result/{task_id}").json()
+
+    assert set(body) == {"task_id", "content", "download_url"}
+    assert set(body["content"]) == {
+        "title",
+        "meta_description",
+        "hook",
+        "sections",
+        "key_points",
+        "call_to_action",
+        "tags",
+        "sources",
+    }
+    assert set(body["content"]["sections"][0]) == {"heading", "body", "pull_quote"}
 
 
 def test_get_result_not_completed():

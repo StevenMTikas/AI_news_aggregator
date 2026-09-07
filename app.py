@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-FastAPI Web Application for AI News Aggregator
+FastAPI Web Application for ContentForge
 Provides a web interface for generating AI blog posts
 """
 import os
@@ -17,9 +17,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
-from src.ai_news_aggregator.main import OUTPUT_DIR, build_default_inputs, run_pipeline
-from src.ai_news_aggregator.schemas import BlogContent
-from src.ai_news_aggregator.projects import (
+from src.contentforge.main import OUTPUT_DIR, build_default_inputs, run_pipeline
+from src.contentforge.schemas import BlogContent
+from src.contentforge.projects import (
     ProjectNotFoundError,
     ProjectProfile,
     ProjectSlugConflictError,
@@ -50,7 +50,7 @@ else:
     logger.info("All required environment variables are set.")
 
 app = FastAPI(
-    title="AI News Aggregator",
+    title="ContentForge",
     description="Generate AI-powered blog posts with a beautiful web interface",
     version="1.0.0"
 )
@@ -165,7 +165,7 @@ def serve_static_page(filename: str, fallback_html: str) -> HTMLResponse:
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
-    return serve_static_page("index.html", "<h1>AI News Aggregator</h1><p>Please run setup first.</p>")
+    return serve_static_page("index.html", "<h1>ContentForge</h1><p>Please run setup first.</p>")
 
 
 @app.get("/admin", response_class=HTMLResponse)

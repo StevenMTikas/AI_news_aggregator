@@ -1,4 +1,4 @@
-# Tools package for AI News Aggregator
+# Tools package for ContentForge
 # Add custom tools here as needed
 
 __all__ = []

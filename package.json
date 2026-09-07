@@ -1,5 +1,5 @@
 {
-  "name": "ai-news-aggregator-frontend-tests",
+  "name": "contentforge-frontend-tests",
   "private": true,
   "scripts": {
     "test": "vitest run"
