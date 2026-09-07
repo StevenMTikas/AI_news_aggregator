@@ -360,7 +360,9 @@ Each phase is independently shippable, ends with `pytest` green (network-free) a
 smoke run. Ordered so the risky middle (CrewAI removal, DB) has a correct reference output on
 either side.
 
-### Phase 1 — Correct the current output (reference baseline) · ~45 min
+**Progress:** Phase 1 ✅ · Phase 2 ✅ · Phase 3 ✅ · Phase 4 → next.
+
+### Phase 1 — Correct the current output (reference baseline) · ~45 min · ✅ done
 Minimal slice of the old plan's Phase 1 — only what carries forward:
 - `render_jekyll_markdown`: emit `meta_description`, `content.tags`, `content.sources` (write
   it clean — this logic becomes `JekyllMarkdownRenderer`).
@@ -370,19 +372,39 @@ Minimal slice of the old plan's Phase 1 — only what carries forward:
   rendered `.md` for a fixed fake result. These lock behaviour across the rewrite.
 - Skip the `tasks.yaml` / `crew.py` context-vs-YAML cleanup — that code is deleted in Phase 4.
 
-### Phase 2 — Rename the package · ~1 hr
+### Phase 2 — Rename the package · ~1 hr · ✅ done
 `ai_news_aggregator` → `contentforge`. Mechanical: `src/contentforge/`, all imports,
 `pyproject.toml` (`name`, scripts, drop `[tool.crewai]`), `app.py`, `Dockerfile` (port →
 8000). **Delete** `render.yaml`, the two cloud deployment guides, README HF front-matter. Own
 commit, no behaviour change.
 
-### Phase 3 — Provider protocols + agent loop + schemas · ~half day
-`providers/` (`LLMProvider`/`OpenAIProvider`, `EmbeddingProvider`/`OpenAIEmbeddingProvider`,
-`SearchProvider`/`SerperSearchProvider` with the `serper_cache` **table**,
-`NullSearchProvider`), `agents/base.py`, `agent_loop.py`, and `schemas.py` additions
-(`KeywordReport`, `ResearchBrief`, `Source`, `FactCheckReport`, `CritiqueReport`,
-`DocumentMetadata`). Unit-tested against `NullSearchProvider` + a fake LLM. Nothing wired into
-the app yet.
+### Phase 3 — Provider protocols + agent loop + schemas · ~half day · ✅ done
+Shipped in `src/contentforge/`:
+- `providers/base.py` — `LLMProvider`, `EmbeddingProvider`, `SearchProvider`, `SearchCache`,
+  `Renderer` protocols + the data types that cross them (`LLMResult`, `ToolCall`, `ToolSpec`,
+  `SearchResult`, `SearchBudget`, `RenderedArtifact`).
+- `providers/openai_provider.py` — `OpenAIProvider` (chat + tool calls + structured output via
+  `chat.completions.parse`), `OpenAIEmbeddingProvider`. Lazy client, no key needed to import.
+- `providers/serper.py` — `SerperSearchProvider` (normalised-query cache, `SearchBudget`,
+  recency→`tbs`, prefer/exclude domains, injectable transport), `NullSearchProvider`,
+  `InMemorySearchCache`, `normalize_query`.
+- `providers/fakes.py` — `FakeLLMProvider` (scripted turns, records calls), `FakeEmbeddingProvider`.
+- `agents/base.py` — `Agent`, `Tool`, `AgentBudget`, `render_prompt`, `search_tool`.
+- `agent_loop.py` — `run_agent(llm, agent, task, …)`: tool-calling loop with iteration /
+  tool-call caps, emits LLM cost events. ~120 lines; the whole CrewAI replacement.
+- `cost.py` — `CostEvent` / `CostLedger` with a per-model price table.
+- `schemas.py` — added `KeywordReport`, `Source`, `KeywordCoverage`, `ResearchBrief`,
+  `ClaimVerdict`, `FactCheckReport`, `CritiqueReport`, `DocumentMetadata` (shapes kept
+  strict-structured-output-safe: no open-ended `dict` maps).
+
+Deviations from the sketch above, both deliberate:
+- The `serper_cache` **table** needs the DB, which lands in Phase 5. Phase 3 ships the
+  `SearchCache` **protocol** + `InMemorySearchCache`; Phase 5 adds the SQLite impl behind the
+  same interface.
+- `agent_loop` records **LLM** cost only. Search-call cost is derived from
+  `SearchBudget.calls_made` by the orchestrator so cache hits are never charged.
+
+49 new tests, network-free (fakes + injected transport). Nothing wired into the app yet.
 
 ### Phase 4 — Replace CrewAI: research + blog pipelines · ~1–1.5 days
 - `agents/`: `keyword`, `research`, `synthesis`, `blog_writer`, `editor`.

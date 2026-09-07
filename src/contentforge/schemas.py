@@ -1,6 +1,19 @@
-from typing import List, Optional
+"""Structured outputs exchanged between agents and pipelines.
+
+Shapes are kept compatible with OpenAI strict structured outputs: no open-ended
+``dict[str, ...]`` maps (use a list of small records instead), and every nested type is a
+``BaseModel``. Fields carry defaults so we can build them freely in code; the model is still
+required to populate them all when a schema is used as a response format.
+"""
+
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel
+
+Credibility = Literal["supported", "weak", "unsupported"]
+
+
+# --------------------------------------------------------------------- blog output
 
 
 class Section(BaseModel):
@@ -18,3 +31,80 @@ class BlogContent(BaseModel):
     call_to_action: Optional[str] = None
     tags: List[str]
     sources: List[str]
+
+
+# ------------------------------------------------------------------- keyword report
+
+
+class KeywordReport(BaseModel):
+    primary_keywords: List[str] = []
+    long_tail: List[str] = []
+    trending: List[str] = []
+    related_terms: List[str] = []
+    informational: List[str] = []
+    commercial: List[str] = []
+    notes: str = ""
+
+
+# ----------------------------------------------------------------- research brief
+
+
+class Source(BaseModel):
+    url: str
+    title: str = ""
+    domain: str = ""
+    published: Optional[str] = None
+    takeaway: str = ""
+    credibility: Optional[Credibility] = None
+
+
+class KeywordCoverage(BaseModel):
+    keyword: str
+    covered_by: List[str] = []  # the key_findings that address this keyword
+
+
+class ResearchBrief(BaseModel):
+    topic: str
+    summary: str = ""
+    key_findings: List[str] = []
+    trends: List[str] = []
+    audience_impact: List[str] = []
+    sources: List[Source] = []
+    keyword_coverage: List[KeywordCoverage] = []
+
+
+# --------------------------------------------------------------------- fact check
+
+
+class ClaimVerdict(BaseModel):
+    claim: str
+    verdict: Credibility
+    evidence_url: Optional[str] = None
+    note: str = ""
+
+
+class FactCheckReport(BaseModel):
+    verdicts: List[ClaimVerdict] = []
+    unsupported_claims: List[str] = []  # claims to cut or hedge
+    overall: Literal["pass", "revise", "fail"] = "pass"
+
+
+# ------------------------------------------------------------------------ critique
+
+
+class CritiqueReport(BaseModel):
+    confusing_passages: List[str] = []
+    unexplained_terms: List[str] = []
+    weak_spots: List[str] = []
+    suggestions: List[str] = []
+
+
+# ---------------------------------------------------------------------- metadata
+
+
+class DocumentMetadata(BaseModel):
+    title_options: List[str] = []
+    meta_description: str = ""
+    slug: str = ""
+    tags: List[str] = []
+    internal_links: List[str] = []  # suggestions referencing prior project documents
