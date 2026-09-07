@@ -6,25 +6,15 @@ promised but not built.
 
 > Items 1–8 below are all scheduled to be resolved by the rewrite in
 > [ARCHITECTURE_PLAN.md](ARCHITECTURE_PLAN.md) — see its §13 mapping. This file will be
-> pruned as those phases land.
+> pruned as those phases land. **Phases 1–4 done:** CrewAI removed; #1 resolved; the Serper
+> half of #5 (cross-run search cache) and the seam for #6 (configurable model) are in place.
 
-## 1. `train` / `replay` / `test` CLI commands
+## 1. ~~`train` / `replay` / `test` CLI commands~~ — resolved (Phase 2)
 
-`pyproject.toml` registers these as installable console scripts:
-
-```toml
-train = "contentforge.main:train"
-replay = "contentforge.main:replay"
-test = "contentforge.main:test"
-```
-
-None of `train`, `replay`, or `test` exist in [`src/contentforge/main.py`](src/contentforge/main.py) —
-only `build_default_inputs`, `render_jekyll_markdown`, `save_blog_post`, `run_pipeline`, and `run`
-are defined. Running any of these three commands today fails immediately. This is CrewAI's standard project
-scaffolding (train the crew over N iterations, replay a specific task from a previous run, test
-outputs against different LLMs) — worth either implementing them (CrewAI's `Crew` object has
-built-in `train()`/`test()` support and `replay_from_task_id`) or removing the entry points from
-`pyproject.toml` if they're not wanted.
+These were CrewAI scaffolding entry points whose targets never existed. Removed from
+`pyproject.toml` when CrewAI was dropped. Re-run / re-render capability is covered by the
+`RunService` design in ARCHITECTURE_PLAN.md (Phase 5 `run` history + `render`, Phase 6
+`brief_updater`).
 
 ## 2. Rate limiting on the public API
 

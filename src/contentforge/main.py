@@ -2,13 +2,12 @@
 import warnings
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 from dotenv import load_dotenv
 
-from .crew import ContentForgeCrew
-from .projects import ProjectProfile, slugify
-from .schemas import BlogContent
+from .projects import ProjectProfile
+from .run_service import RunResult, default_run_service
 
 load_dotenv()
 warnings.filterwarnings("ignore", category=SyntaxWarning, module="pysbd")
@@ -40,81 +39,16 @@ def build_default_inputs(
     }
 
 
-def _yaml_double_quote(value: str) -> str:
-    """Wrap a scalar in double quotes, escaping backslashes and embedded quotes."""
-    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
-    return f'"{escaped}"'
-
-
-def _yaml_flow_list(values: List[str]) -> str:
-    return "[" + ", ".join(values) + "]"
-
-
-def render_jekyll_markdown(
-    content: BlogContent, project: ProjectProfile, current_date: str
-) -> str:
-    categories = _yaml_flow_list(project.category_tags)
-    tags = _yaml_flow_list(content.tags)
-    body_sections = "\n\n".join(
-        f"## {section.heading}\n\n{section.body}"
-        + (f"\n\n> {section.pull_quote}" if section.pull_quote else "")
-        for section in content.sections
-    )
-    key_points = "\n".join(f"- {point}" for point in content.key_points)
-    cta = f"\n\n{content.call_to_action}" if content.call_to_action else ""
-    sources = ""
-    if content.sources:
-        source_lines = "\n".join(f"- {source}" for source in content.sources)
-        sources = f"\n\n## Sources\n\n{source_lines}"
-    return f"""---
-title: {_yaml_double_quote(content.title)}
-description: {_yaml_double_quote(content.meta_description)}
-date: {current_date}
-categories: {categories}
-tags: {tags}
-author: {project.author}
-layout: post
----
-
-{content.hook}
-
-{body_sections}
-
-## Key Takeaways
-
-{key_points}{cta}{sources}
-"""
-
-
-def save_blog_post(
-    result: Any,
-    project: ProjectProfile,
-    current_date: str,
-    output_dir: Optional[Path] = None,
-) -> Path:
-    output_path = output_dir or OUTPUT_DIR
-    output_path.mkdir(parents=True, exist_ok=True)
-
-    content = result.pydantic
-    if content is None:
-        raise ValueError("Crew result did not contain structured BlogContent output")
-
-    markdown = render_jekyll_markdown(content, project, current_date)
-    keyword_title = slugify(content.title)[:50]
-    filename = f"{current_date}-{keyword_title}-blog-post.md"
-    file_path = output_path / filename
-    file_path.write_text(markdown, encoding="utf-8")
-    return file_path
-
-
 def run_pipeline(
     inputs: Dict[str, str], project: ProjectProfile, output_dir: Optional[Path] = None
-) -> Tuple[Any, Path]:
-    result = ContentForgeCrew().crew().kickoff(inputs=inputs)
-    output_path = save_blog_post(
-        result, project, inputs["current_date"], output_dir=output_dir
+) -> Tuple[RunResult, Path]:
+    service = default_run_service(output_dir=output_dir or OUTPUT_DIR)
+    result = service.run_atomic(
+        project,
+        inputs["topic"],
+        current_date=inputs.get("current_date"),
     )
-    return result, output_path
+    return result, result.primary_path
 
 
 def run(project_slug: str, topic: str = DEFAULT_TOPIC, topic_slug: str = DEFAULT_SLUG):

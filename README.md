@@ -1,9 +1,10 @@
 # ContentForge
 
 An AI content generator that creates structured, ready-to-publish blog posts for any of your
-own **projects** — each with its own audience, tone, and branding. Currently built with CrewAI
-and GPT-4o-mini; a plain-Python rewrite with persisted research and multi-format output is
-underway — see [ARCHITECTURE_PLAN.md](ARCHITECTURE_PLAN.md).
+own **projects** — each with its own audience, tone, and branding. Built in plain Python on the
+OpenAI API (GPT-4o-mini). A larger rewrite adding persisted research, SQLite, and multi-format
+output (LinkedIn, newsletter, podcast script, PDF guide) is in progress — see
+[ARCHITECTURE_PLAN.md](ARCHITECTURE_PLAN.md); Phases 1–4 are done.
 
 ## 🎯 What It Does
 
@@ -138,23 +139,21 @@ Section body...
 
 ## 🤖 The AI Agents
 
-### Keyword Researcher Agent
-- **Model**: GPT-4o-mini
-- **Role**: Finds relevant, trending keywords for the topic and the project's audience
-- **Output**: Keyword research report used to guide the researcher and blog writer
+Defined in [`src/contentforge/agents/library.py`](src/contentforge/agents/library.py) as
+prompt + output-schema pairs, run by a small tool-calling loop
+([`agent_loop.py`](src/contentforge/agent_loop.py)). All use GPT-4o-mini.
 
-### Researcher Agent
-- **Model**: GPT-4o-mini
-- **Role**: Finds latest developments and real-world applications relevant to the project's audience, guided by the keyword research
+| Agent | Tool | Output | Role |
+|---|---|---|---|
+| `keyword_agent` | — | `KeywordReport` | Generates the primary/long-tail/trending keyword set for the topic and audience (no search). |
+| `research_agent` | web search | `ResearchNotes` | Searches for current, sourced information tied to the primary keywords. The only agent that spends search credits. |
+| `synthesis_agent` | — | `ResearchBrief` | Distils the notes into a clean, source-backed brief. |
+| `blog_writer_agent` | — | `BlogContent` | Drafts the post from the brief, in the project's tone/audience/voice. |
+| `editor_agent` | — | `BlogContent` | Checks claims against the brief, tightens length and structure, removes jargon. |
 
-### Blog Writer Agent
-- **Model**: GPT-4o-mini
-- **Role**: Writes a structured post in the project's tone, for the project's audience, attributed to the project's author
-- **Output**: A `BlogContent` object (see **Structured Output & the API** below) — not freeform markdown
-
-All three agents are parameterized by the selected project — audience, tone, author, category
-tags, and target word count come from the `ProjectProfile` you set up in `/admin`, not from
-hardcoded text in the YAML config.
+The research pipeline (keyword → research → synthesis) produces a `ResearchBrief`; the blog
+pipeline (writer → editor) composes from it. Audience, tone, author, category tags, and word
+count come from the selected project.
 
 ## 🗂️ Projects
 
@@ -230,15 +229,17 @@ contentforge/
 │   ├── admin.js
 │   └── tests/                 # Vitest tests for app.js/admin.js
 ├── src/contentforge/          # Core application
-│   ├── main.py                # Pipeline entry point (build_default_inputs, run_pipeline)
-│   ├── cli.py                 # Command-line entry point
-│   ├── crew.py                # Agent and task definitions
+│   ├── main.py                # build_default_inputs, run_pipeline
+│   ├── cli.py                 # command-line entry point
+│   ├── run_service.py         # orchestration: research -> compose -> render -> write
+│   ├── agent_loop.py          # the tool-calling loop that runs one agent
+│   ├── cost.py                # token/search cost accounting
 │   ├── projects.py            # ProjectProfile model + YAML-backed CRUD storage
-│   ├── schemas.py             # BlogContent/Section structured output models
-│   ├── tools/                 # Custom CrewAI tools (currently empty)
-│   └── config/
-│       ├── agents.yaml        # Agent configurations
-│       └── tasks.yaml         # Task definitions
+│   ├── schemas.py             # structured-output models (BlogContent, ResearchBrief, ...)
+│   ├── agents/                # Agent definitions (base + library) + tools
+│   ├── pipelines/             # research pipeline + per-format compose recipes
+│   ├── providers/             # LLM / embedding / search protocols + OpenAI & Serper impls
+│   └── renderers/             # JekyllMarkdownRenderer (more formats coming)
 ├── tests/                     # Pytest test suite
 └── output/                    # Generated blog posts
     └── YYYY-MM-DD-[topic]-blog-post.md
@@ -264,21 +265,17 @@ DEFAULT_SLUG = "Your custom topic here"
 
 ### Modify Agent Behavior at the Prompt Level
 
-Edit the YAML files in `src/contentforge/config/`:
-- `agents.yaml` - Change agent roles, goals, and backstories (these reference `{audience}`,
-  `{tone}`, `{project_name}`, etc. — keep every placeholder you use here in sync with the keys
-  `build_default_inputs()` supplies, or CrewAI will raise a `ValueError` on generation)
-- `tasks.yaml` - Modify task descriptions and expected outputs. `blog_writer_task` also declares
-  `output_pydantic: BlogContent`, which forces its output into the schema in
-  [`schemas.py`](src/contentforge/schemas.py) — change the schema and this reference
-  together if you need different output fields.
+Edit the agent definitions in
+[`src/contentforge/agents/library.py`](src/contentforge/agents/library.py) — each is an
+`Agent(name, system_prompt, output_schema, ...)`. `{placeholders}` in a prompt are filled
+from the pipeline's context; unknown ones pass through untouched. The output schema (in
+[`schemas.py`](src/contentforge/schemas.py)) is what the model is forced to return.
 
 ### Change the AI Model
 
-Edit `agents.yaml` and change the `llm` field:
-```yaml
-llm: gpt-4o  # or gpt-4, gpt-3.5-turbo, etc.
-```
+Pass `default_model=` to `OpenAIProvider` (see
+[`providers/openai_provider.py`](src/contentforge/providers/openai_provider.py)), or set a
+per-agent `model=` on an `Agent`. A project-level default lands in a later phase.
 
 ## 📊 Example Output
 
@@ -291,15 +288,15 @@ The blog posts are designed to be:
 
 ## 🧪 Running Tests
 
-**Python** (`app.py`, `main.py`, `cli.py`, `crew.py`, `projects.py`):
+**Python:**
 ```bash
 pip install -e ".[test]"
-pytest -v
+pytest -q
 ```
-Covers project CRUD, the CLI, output rendering/saving, the crew's YAML config (agents/tasks
-build correctly and every `{placeholder}` interpolates — catches drift between `agents.yaml`/
-`tasks.yaml` and `build_default_inputs()` without an LLM call), and all `app.py` endpoints —
-everything mocked so it never makes real OpenAI/Serper calls.
+Covers project CRUD, the CLI, the provider protocols and agent loop, the research and blog
+pipelines, the renderer, `RunService` orchestration (including brief reuse), and every
+`app.py` endpoint — all against fakes and injected transports, so it never makes a real
+OpenAI or Serper call.
 
 **Frontend** (`static/app.js`, `static/admin.js`):
 ```bash
@@ -313,7 +310,7 @@ a browser.
 
 ## 🔧 Troubleshooting
 
-### "No module named 'crewai'"
+### "No module named 'openai'" / import errors
 ```bash
 pip install -e .
 ```
@@ -330,7 +327,6 @@ show an error instead of a submittable form if none exist yet.
 
 ## 📚 Learn More
 
-- [CrewAI Documentation](https://docs.crewai.com)
 - [OpenAI API Documentation](https://platform.openai.com/docs)
 - [GitHub Pages Documentation](https://docs.github.com/en/pages)
 

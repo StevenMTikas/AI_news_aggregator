@@ -12,7 +12,7 @@ from .projects import get_project
 def print_banner(topic: str, timestamp: str, width: int = BANNER_WIDTH) -> None:
     separator = "=" * width
     print(separator)
-    print("AI NEWS AGGREGATOR - Blog Post Generator")
+    print("ContentForge - Blog Post Generator")
     print(separator)
     print(f"Topic: {topic}")
     print(f"Date: {timestamp}")
@@ -37,7 +37,7 @@ def print_error(exc: Exception) -> None:
 
 def run(project_slug: str, topic: str = DEFAULT_TOPIC, topic_slug: str = DEFAULT_SLUG):
     """
-    Run the crew to generate a blog post for the given project.
+    Generate a blog post for the given project.
     """
     try:
         project = get_project(project_slug)
@@ -46,7 +46,7 @@ def run(project_slug: str, topic: str = DEFAULT_TOPIC, topic_slug: str = DEFAULT
         result, output_path = run_pipeline(inputs, project)
     except Exception as exc:  # pragma: no cover - CLI friendly output
         print_error(exc)
-        raise RuntimeError("An error occurred while running the crew.") from exc
+        raise RuntimeError("An error occurred while generating the blog post.") from exc
 
     print_success(output_path)
     return result

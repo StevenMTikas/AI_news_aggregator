@@ -5,7 +5,7 @@ description = "ContentForge - multi-format content generation from persisted res
 authors = [{ name = "Your Name", email = "you@example.com" }]
 requires-python = ">=3.10,<3.14"
 dependencies = [
-    "crewai[tools]>=0.201.1,<1.0.0",
+    "openai>=1.40,<3",
     "python-dotenv>=1.0.0",
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.37.0",

@@ -81,6 +81,16 @@ class KeywordCoverage(BaseModel):
     covered_by: List[str] = []  # the key_findings that address this keyword
 
 
+class ResearchNotes(BaseModel):
+    """Raw output of the research agent: what it searched, what it found, where. The synthesis
+    agent turns this into a ``ResearchBrief`` without any further searching.
+    """
+
+    queries: List[str] = []
+    findings: List[str] = []
+    sources: List[Source] = []
+
+
 class ResearchBrief(BaseModel):
     topic: str
     summary: str = ""
@@ -89,6 +99,9 @@ class ResearchBrief(BaseModel):
     audience_impact: List[str] = []
     sources: List[Source] = []
     keyword_coverage: List[KeywordCoverage] = []
+    # populated by the research pipeline after synthesis (the synthesis agent leaves it null);
+    # persisted with the brief so it stays self-contained and reusable.
+    keyword_report: Optional[KeywordReport] = None
 
 
 # --------------------------------------------------------------------- fact check

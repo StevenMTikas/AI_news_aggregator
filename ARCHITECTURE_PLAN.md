@@ -381,7 +381,7 @@ Each phase is independently shippable, ends with `pytest` green (network-free) a
 smoke run. Ordered so the risky middle (CrewAI removal, DB) has a correct reference output on
 either side.
 
-**Progress:** Phase 1 ✅ · Phase 2 ✅ · Phase 3 ✅ · Phase 4 → next.
+**Progress:** Phase 1 ✅ · Phase 2 ✅ · Phase 3 ✅ · Phase 4 ✅ · Phase 5 → next.
 
 ### Phase 1 — Correct the current output (reference baseline) · ~45 min · ✅ done
 Minimal slice of the old plan's Phase 1 — only what carries forward:
@@ -429,18 +429,33 @@ Deviations from the sketch above, both deliberate:
 
 51 new tests, network-free (fakes + injected transport). Nothing wired into the app yet.
 
-### Phase 4 — Replace CrewAI: research + blog pipelines · ~1–1.5 days
-- `agents/`: `keyword`, `research`, `synthesis`, `blog_writer`, `editor`.
-- `pipelines/base.py` — the `Pipeline` protocol, fixed now so it never needs reworking:
-  `compose(brief, project, corpus=None, source=None) → Document`, plus a per-recipe default
-  target length that `project.length_overrides` can override.
-- `pipelines/research.py`, `pipelines/blog_post.py`.
-- `RunService` (in-memory first — DB in Phase 5) producing a `BlogContent` through the new
-  path; `JekyllMarkdownRenderer`.
-- Delete `crew.py`, `config/agents.yaml`, `config/tasks.yaml`; drop `crewai*` from
-  `pyproject.toml`.
-- **Gate:** the new blog post for a fixed topic is qualitatively equivalent to the Phase 1
-  baseline; full suite green with `crewai` uninstalled.
+### Phase 4 — Replace CrewAI: research + blog pipelines · ~1–1.5 days · ✅ done
+Shipped:
+- `agents/library.py` — `KEYWORD_AGENT`, `RESEARCH_AGENT`, `SYNTHESIS_AGENT`,
+  `BLOG_WRITER_AGENT`, `EDITOR_AGENT` (prompt + schema pairs; the old `agents.yaml` /
+  `tasks.yaml` intent, no CrewAI machinery).
+- `pipelines/base.py` — `Document`, the `ComposePipeline` protocol
+  (`compose(brief, project, corpus=None, source=None) → Document`, fixed so it never needs
+  reworking), and `resolve_target_words` (recipe default → `project.length_overrides` →
+  legacy `target_word_count`).
+- `pipelines/research.py` — `ResearchPipeline.run()`: keyword → research (web search) →
+  synthesis → `ResearchBrief` (with `keyword_report` attached).
+- `pipelines/blog_post.py` — `BlogPostPipeline.compose()`: writer → editor → `Document`.
+- `renderers/jekyll.py` — `JekyllMarkdownRenderer` (the Phase 1 render logic, now behind the
+  `Renderer` seam and owning its filename).
+- `run_service.py` — `RunService` (in-memory brief cache keyed on `(slug, normalized_topic)`,
+  research resolution / reuse, per-run `SearchBudget`, search-cost recording) + `RunResult`
+  (keeps a `.pydantic` alias for `app.py` / `cli.py`) + `default_run_service()`.
+- `main.py` rewired: `run_pipeline` builds a `RunService` and calls `run_atomic`. `app.py` /
+  `cli.py` unchanged (same seam).
+- `schemas.py` — added `ResearchNotes`; `ResearchBrief` gained `keyword_report`.
+- **Deleted** `crew.py`, `config/agents.yaml`, `config/tasks.yaml`. `pyproject.toml`: dropped
+  `crewai[tools]`, added `openai`. `uv.lock` regenerated (≈38 packages, down from ~200).
+- Docs: README agent/structure/customization sections rewritten to match; `future-ideas.md`
+  #1 marked resolved.
+- **Gate:** end-to-end smoke (fake LLM + `NullSearchProvider`) produces a `.md` byte-identical
+  in structure to the Phase 1 baseline. 108 tests pass, `crewai` never imported (suite runs
+  ~6× faster). A real-LLM quality comparison is deferred (costs credits).
 
 ### Phase 5 — SQLite + persistent RunService · ~1–1.5 days
 - `db/` module, `schema.sql`, migration runner.
