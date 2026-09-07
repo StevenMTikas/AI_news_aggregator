@@ -18,7 +18,9 @@ document's Phase 1 becomes **Phase 1** here; its Phases 2–5 are absorbed into 
 | **Persistence** | SQLite (`data/app.db`) as source of truth. Prior research and generated content persist per project and compound over time. |
 | **Deploy** | **Local-first single process** (see §9.1). SQLite on local disk + a built-in backup command. Optional Docker image + persistent volume for a personal VPS. **Remove** `render.yaml`, `GOOGLE_CLOUD_RUN_DEPLOYMENT.md`, `HUGGINGFACE_DEPLOYMENT.md`, and the HF front-matter in `README.md` — ephemeral-disk hosting fights the whole design. |
 | **Access model** | Single operator. One static API key guards mutating/generating endpoints; CORS locked to localhost. No accounts, no multi-tenancy. |
-| **Output — atomic runs** | topic → one paid research pass → blog post + social thread + repurposed snippets, all from one fact-checked brief. |
+| **Output — atomic runs** | topic → one paid research pass → blog post + **LinkedIn post** + social thread + repurposed snippets, each an independent sibling recipe off the one fact-checked brief (not a compression of the blog). LinkedIn gets its own `LinkedInPost` schema (Phase 7). |
+| **Recipe input shape** | Every recipe is `compose(brief, project, corpus, source: Document \| None) → Document`. `source=None` = sibling take off the research; `source=<Document>` = repurpose an existing artifact. Signature fixed in Phase 4 so it never needs reworking. |
+| **Content length** | A property of the **recipe**, not the project. `target_word_count` leaves `ProjectProfile`; each recipe carries a default, `project.length_overrides` (`{recipe: count}`) tweaks it. |
 | **Output — compilation runs** | Build the framework for all three long-form types and implement all three: **newsletter**, **podcast script** (script text only for now; renderer seam left for audio), **informative guide → PDF**. Chosen from a dropdown, with a control for how much prior content feeds in. |
 | **PDF engine** | **WeasyPrint** (HTML/CSS → PDF). ReportLab noted as fallback if system libs are a problem. |
 | **Retrieval ("smarter over time")** | **Hybrid retrieval from the start** — SQLite FTS5 (BM25 keyword) + embedding vector search (`text-embedding-3-small`, brute-force cosine over stored vectors), fused. Best long-term recall; the `KnowledgeStore` interface hides it so the impl can evolve (e.g. `sqlite-vec`) without touching callers. |
@@ -88,10 +90,20 @@ Persistence       SQLite  data/app.db
 Design rules:
 
 - **Research is separated from composition.** `research(topic, strategy) → ResearchBrief`
-  runs once per topic and is cached; `compose(brief, project, corpus) → Document` is cheap,
-  does no web search, reruns freely. Collapses Serper spend to one call-set per *topic*
-  instead of per *artifact*; makes new formats nearly free; gives the fact-checker something
-  concrete to verify against.
+  runs once per topic and is cached; composition is cheap, does no web search, reruns freely.
+  Collapses Serper spend to one call-set per *topic* instead of per *artifact*; makes new
+  formats nearly free; gives the fact-checker something concrete to verify against.
+- **One compose signature, two input shapes.** Every recipe is
+  `compose(brief: ResearchBrief, project, corpus, source: Document | None = None) → Document`.
+  `source=None` is a **sibling** recipe — an independent take off the same research (blog,
+  LinkedIn post, social thread all composed in parallel from one brief). `source=<a Document>`
+  is **repurposing** — reshaping an existing artifact (e.g. a promo LinkedIn post pointing at
+  a published blog article). Some recipes (LinkedIn) legitimately want either, depending on
+  workflow. Baking `source` into the signature now avoids reworking the pipeline base at the
+  second recipe. A LinkedIn post is *not* a mechanical compression of the blog post — that
+  produces the flat, obviously-derivative text that reads as AI output; it is short by length
+  but original by structure (hook → turn → insight → soft CTA), so it composes from the brief,
+  not from the blog `Document`.
 - **Code owns "how", the DB owns "what / voice".** Pipelines and prompts live in Python
   (versioned, testable). Per-project knobs — subject focus, style guide, banned phrases,
   research strategy — live in the DB, editable at runtime.
@@ -110,11 +122,11 @@ ISO-8601. JSON columns for lists/dicts.
 
 | Table | Key columns | Notes |
 |---|---|---|
-| `project` | `id`, `slug` (unique), `name`, `audience`, `author`, `subject_focus` (text — what the project is *about*; steers research + retrieval), `style_guide` (text), `banned_phrases` (json), `recency_days` (int), `min_sources` (int), `prefer_domains` (json), `exclude_domains` (json), `default_model`, `created_at` | Replaces `ProjectProfile` + the YAML files. `tone` / `category_tags` / `target_word_count` fold into `style_guide` and per-pipeline params. |
+| `project` | `id`, `slug` (unique), `name`, `audience`, `author`, `subject_focus` (text — what the project is *about*; steers research + retrieval), `style_guide` (text), `banned_phrases` (json), `recency_days` (int), `min_sources` (int), `prefer_domains` (json), `exclude_domains` (json), `default_model`, `length_overrides` (json — `{recipe: word_count}`, optional), `created_at` | Replaces `ProjectProfile` + the YAML files. `tone` / `category_tags` fold into `style_guide`. **`target_word_count` moves off the project**: length is a property of the recipe (a LinkedIn post and a guide differ by 20×), so each recipe carries its own default and `length_overrides` lets a project nudge one. |
 | `run` | `id`, `project_id`, `kind` (`research`\|`atomic`\|`compilation`), `status` (`pending`\|`running`\|`completed`\|`failed`\|`partial`), `topic`, `pipeline`, `params` (json), `error`, `cost_usd`, `search_calls`, `tokens_in`, `tokens_out`, `created_at`, `finished_at` | Replaces the in-memory `tasks` dict. Survives restart. |
 | `research_brief` | `id`, `run_id`, `project_id`, `topic`, `normalized_topic`, `summary` (text), `key_findings` (json), `trends` (json), `audience_impact` (json), `keyword_report` (json), `embedding` (blob), `created_at`, `expires_at` (now + `recency_days`), `superseded_by` (nullable → newer brief id) | The reusable asset. Dedupe on `(project_id, normalized_topic)` where `expires_at > now AND superseded_by IS NULL`. |
 | `source` | `id`, `brief_id`, `url`, `title`, `domain`, `published_at`, `takeaway` (one sentence), `snippet` (captured text used for verification), `embedding` (blob), `credibility` (nullable: `supported`\|`weak`\|`unsupported`) | Provenance for every claim. |
-| `document` | `id`, `run_id`, `project_id`, `type` (`blog_post`\|`social_thread`\|`repurpose`\|`newsletter`\|`podcast_script`\|`guide`), `title`, `content_json`, `section_embeddings` (blob/json), `rendered_path`, `rendered_format`, `based_on_brief_ids` (json), `based_on_document_ids` (json), `review_status`, `review_notes` (text), `created_at` | Output. Re-render from `content_json` with no LLM/search calls. |
+| `document` | `id`, `run_id`, `project_id`, `type` (`blog_post`\|`linkedin_post`\|`social_thread`\|`repurpose`\|`newsletter`\|`podcast_script`\|`guide`), `title`, `content_json`, `section_embeddings` (blob/json), `rendered_path`, `rendered_format`, `based_on_brief_ids` (json), `based_on_document_ids` (json — set when composed with a `source` Document), `review_status`, `review_notes` (text), `created_at` | Output. Re-render from `content_json` with no LLM/search calls. |
 | `cost_event` | `id`, `run_id`, `kind` (`llm`\|`search`\|`embedding`), `provider`, `model`, `tokens_in`, `tokens_out`, `calls`, `usd`, `created_at` | Feeds the cost ledger (Phase 10). |
 | `serper_cache` | `key` (hash of normalized query + type + n), `query`, `search_type`, `result_json`, `stored_at` | Cross-run Serper cache. TTL by `search_type` (24 h `news`, 7 d otherwise). |
 | `brief_fts` / `doc_fts` | FTS5 virtual tables (BM25) over brief summaries + source takeaways + document text | Keyword half of hybrid retrieval; kept in sync by triggers. |
@@ -128,8 +140,12 @@ ISO-8601. JSON columns for lists/dicts.
 
 ### Tier 1 — Atomic run
 
-**Input:** project · topic · artifact selection (blog post / social thread / repurpose
-snippets) · `force_fresh_research` toggle.
+**Input:** project · topic · artifact selection (blog post / LinkedIn post / social thread /
+repurpose snippets) · `force_fresh_research` toggle.
+
+Every selected artifact is a **sibling** recipe — composed independently from the one brief,
+not chained off the blog post — so they can run in parallel and none inherits another's
+phrasing.
 
 1. `RunService.start_atomic(...)` → `run` (`kind=atomic`).
 2. **Research resolution.** Look for a `research_brief` in this project with matching
@@ -150,9 +166,13 @@ snippets) · `force_fresh_research` toggle.
      (reads as the target audience; flags confusion / unexplained jargon) → `editor_agent`
      applies critic + fact-check notes → `voice_agent` (sentence-level rewrite to strip
      AI-tell patterns — see §6) → final `BlogContent`.
+   - LinkedIn post: `linkedin_writer_agent` → `editor_agent` → `audience_critic_agent` →
+     `editor_agent` → `voice_agent` → final `LinkedInPost` (own schema — see §6 / Phase 7).
+     Narrative structure (hook → turn → insight → soft CTA), not compressed blog sections.
    - social thread: `social_thread_agent` → `voice_agent` → `SocialThread`.
    - repurpose: `repurpose_agent` → `voice_agent` → `Snippet[]` (platform-tagged: X,
-     LinkedIn, IG caption, newsletter blurb).
+     LinkedIn, IG caption, newsletter blurb). This recipe *may* take a `source` Document
+     (reshape a published piece) or run off the brief like the others.
    - a cheap final consistency check confirms `voice_agent` dropped no claim or cited source.
    - `metadata_agent` → title options, `meta_description`, slug, tags, **internal-link
      suggestions** drawn from prior `document`s in the same project.
@@ -216,7 +236,7 @@ caps, emitting `cost_event`s.
 | 7 | `voice_agent` | none | rewritten `Document` + `voice_notes` | **Standalone, own agent** (not folded into editor/critic — it's a rewrite pass with its own checklist, and the editor is already carrying style guide + claims + critic notes). Runs last in every compose flow. Sentence-level rewrite to remove AI-tell patterns: reflexive hedging, tricolons, "it's not just X — it's Y", "in today's landscape", hollow transitions, restated-summary sentences, uniform paragraph rhythm, em-dash overuse, "delve / tapestry / testament / underscore". Hard-constrained to **preserve every claim and cited source in meaning** — it rephrases, it does not add or drop facts; the §5 consistency check enforces this. `banned_phrases` (exact strings) stays the editor's job; this is stylistic pattern detection. |
 | 8 | `metadata_agent` | none | `DocumentMetadata` | Titles, `meta_description`, slug, tags, and **internal-link suggestions** from prior project documents. Improves publishability and cross-linking of the growing corpus. |
 | 9 | `brief_updater_agent` | `SearchProvider` (capped) | updated `ResearchBrief` (a diff) | Given an existing brief + a fresh capped search: what's new / changed / no longer true. The mechanism behind "the project gets smarter" — re-research a topic and build on what was known instead of starting over. Sets `superseded_by`. |
-| 10 | `blog_writer_agent` / `social_thread_agent` / `repurpose_agent` | none | `BlogContent` / `SocialThread` / `Snippet[]` | Per-format writers, brief-only. |
+| 10 | `blog_writer_agent` / `linkedin_writer_agent` / `social_thread_agent` / `repurpose_agent` | none | `BlogContent` / `LinkedInPost` / `SocialThread` / `Snippet[]` | Per-format writers. All compose from the brief; `repurpose_agent` (and `linkedin_writer_agent` when asked) can also take a `source` Document. `linkedin_writer_agent` writes narratively (hook/turn/insight/soft-CTA), not by compressing blog sections. |
 | 11 | `outline_agent` + `longform_writer_agent` | none | `Outline` / `Newsletter`\|`PodcastScript`\|`Guide` | Long-form. Outline-first keeps compilations coherent and provenance-honest. |
 
 ---
@@ -328,10 +348,11 @@ fragments to delete most of the hand-rolled `fetch`/render code in `app.js`/`adm
 
 New / reworked screens:
 
-1. **Generate (atomic)** — topic field · artifact checkboxes (blog / thread / repurpose) ·
-   `force fresh research` toggle. A **research-status line** before you commit: *"✓ fresh
-   brief from 3 days ago will be reused — no search cost"* vs *"will run new research (~N
-   Serper credits, ~$X)"*. Surfacing cost pre-commit is the single biggest UX win.
+1. **Generate (atomic)** — topic field · artifact checkboxes (blog / LinkedIn post / thread /
+   repurpose) · `force fresh research` toggle. A **research-status line** before you commit:
+   *"✓ fresh brief from 3 days ago will be reused — no search cost"* vs *"will run new
+   research (~N Serper credits, ~$X)"*. Surfacing cost pre-commit is the single biggest UX
+   win.
 2. **Compile (long-form)** — new page. project → long-form type dropdown → **corpus picker**:
    a scrollable list of recent runs/documents with checkboxes, quick filters (last 7/30/90
    days, by tag), and a live *"12 briefs · ~8k tokens selected"* counter · optional angle
@@ -408,6 +429,9 @@ Deviations from the sketch above, both deliberate:
 
 ### Phase 4 — Replace CrewAI: research + blog pipelines · ~1–1.5 days
 - `agents/`: `keyword`, `research`, `synthesis`, `blog_writer`, `editor`.
+- `pipelines/base.py` — the `Pipeline` protocol, fixed now so it never needs reworking:
+  `compose(brief, project, corpus=None, source=None) → Document`, plus a per-recipe default
+  target length that `project.length_overrides` can override.
 - `pipelines/research.py`, `pipelines/blog_post.py`.
 - `RunService` (in-memory first — DB in Phase 5) producing a `BlogContent` through the new
   path; `JekyllMarkdownRenderer`.
@@ -445,12 +469,27 @@ Deviations from the sketch above, both deliberate:
 - `audience_critic_agent` (standalone) + `voice_agent` (standalone, natural-voice rewrite,
   §6 #7) + `metadata_agent` wired into the compose flow, in that order, with the post-`voice`
   claim/source consistency check.
-- `social_thread` + `repurpose` pipelines + agents + renderers.
-- Atomic run emits blog + thread + snippets + metadata from one brief.
+- `linkedin_post` + `social_thread` + `repurpose` pipelines + agents + renderers — all
+  siblings off the brief; `repurpose` (and `linkedin_post` on request) also accept a `source`
+  Document.
+- **`LinkedInPost` schema** (its own shape, not `BlogContent`):
+  - `hook` — carries the whole post; it's what shows above the ~1,300-char "see more" fold
+  - `body` — line-break-separated **plain text**, no markdown (LinkedIn renders none — a `##`
+    ships literally)
+  - `cta`
+  - `hashtags` — 3–5 (not the 10+ a blog tag list produces)
+  - `link_placement` — `"body"` or `"first_comment"`, **configurable** (a recipe/project
+    setting, default `first_comment`). The "links in the body get demoted" belief is
+    widely followed but the algorithm isn't publicly documented, so don't hardcode it.
+  - `linkedin_writer_agent` composes narratively from the brief; the blog `pull_quote` /
+    `hook` / `meta_description` fields are useful raw material but not required inputs.
+  - LinkedIn renderer emits plain text with the link either inline or as a separate
+    "first comment" block for the operator to paste.
+- Atomic run emits blog + LinkedIn post + thread + snippets + metadata from one brief.
 - Build a small **AI-tell regression fixture**: a few known-slop paragraphs + assertions that
   `voice_agent` removes the patterns without changing the fact set.
 - **Gate:** one atomic run → all artifacts, all fact-checked and voice-passed, **zero** extra
-  search calls for artifacts 2+.
+  search calls for artifacts 2+; the LinkedIn post reads as narrative, not a blog summary.
 
 ### Phase 8 — Compilation runs (all three long-form formats) · ~2 days
 - `outline_agent`, `longform_writer_agent`; `Newsletter`, `PodcastScript`, `Guide` schemas.
