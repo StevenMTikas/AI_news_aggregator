@@ -415,8 +415,10 @@ Shipped in `src/contentforge/`:
   tool-call caps, emits LLM cost events. ~120 lines; the whole CrewAI replacement.
 - `cost.py` — `CostEvent` / `CostLedger` with a per-model price table.
 - `schemas.py` — added `KeywordReport`, `Source`, `KeywordCoverage`, `ResearchBrief`,
-  `ClaimVerdict`, `FactCheckReport`, `CritiqueReport`, `DocumentMetadata` (shapes kept
-  strict-structured-output-safe: no open-ended `dict` maps).
+  `ClaimVerdict`, `FactCheckReport`, `CritiqueReport`, `DocumentMetadata`, and `LinkedInPost`
+  (`hook` / `body` plain-text stanzas / `cta` / `hashtags` / `link_url` /
+  `link_placement` ∈ {`body`, `first_comment`}, default `first_comment`). Shapes kept
+  strict-structured-output-safe: no open-ended `dict` maps.
 
 Deviations from the sketch above, both deliberate:
 - The `serper_cache` **table** needs the DB, which lands in Phase 5. Phase 3 ships the
@@ -425,7 +427,7 @@ Deviations from the sketch above, both deliberate:
 - `agent_loop` records **LLM** cost only. Search-call cost is derived from
   `SearchBudget.calls_made` by the orchestrator so cache hits are never charged.
 
-49 new tests, network-free (fakes + injected transport). Nothing wired into the app yet.
+51 new tests, network-free (fakes + injected transport). Nothing wired into the app yet.
 
 ### Phase 4 — Replace CrewAI: research + blog pipelines · ~1–1.5 days
 - `agents/`: `keyword`, `research`, `synthesis`, `blog_writer`, `editor`.
@@ -472,19 +474,17 @@ Deviations from the sketch above, both deliberate:
 - `linkedin_post` + `social_thread` + `repurpose` pipelines + agents + renderers — all
   siblings off the brief; `repurpose` (and `linkedin_post` on request) also accept a `source`
   Document.
-- **`LinkedInPost` schema** (its own shape, not `BlogContent`):
-  - `hook` — carries the whole post; it's what shows above the ~1,300-char "see more" fold
-  - `body` — line-break-separated **plain text**, no markdown (LinkedIn renders none — a `##`
-    ships literally)
-  - `cta`
-  - `hashtags` — 3–5 (not the 10+ a blog tag list produces)
-  - `link_placement` — `"body"` or `"first_comment"`, **configurable** (a recipe/project
-    setting, default `first_comment`). The "links in the body get demoted" belief is
-    widely followed but the algorithm isn't publicly documented, so don't hardcode it.
-  - `linkedin_writer_agent` composes narratively from the brief; the blog `pull_quote` /
-    `hook` / `meta_description` fields are useful raw material but not required inputs.
-  - LinkedIn renderer emits plain text with the link either inline or as a separate
-    "first comment" block for the operator to paste.
+- **`LinkedInPost` schema** — already built in Phase 3 (`hook`, `body` plain-text stanzas,
+  `cta`, `hashtags`, `link_url`, `link_placement` ∈ {`body`, `first_comment`} default
+  `first_comment`). Phase 7 adds:
+  - `linkedin_writer_agent` — composes narratively from the brief (hook → turn → insight →
+    soft CTA); the blog `pull_quote` / `hook` / `meta_description` fields are useful raw
+    material but not required inputs. 3–5 hashtags enforced by the prompt, not schema
+    validation.
+  - LinkedIn renderer — plain text (no markdown), link rendered inline or as a separate
+    "first comment" block for the operator to paste, per `link_placement`.
+  - `link_placement` default is `first_comment` (the "body links get demoted" belief is
+    widely followed but undocumented) — a recipe/project setting, not hardcoded.
 - Atomic run emits blog + LinkedIn post + thread + snippets + metadata from one brief.
 - Build a small **AI-tell regression fixture**: a few known-slop paragraphs + assertions that
   `voice_agent` removes the patterns without changing the fact set.

@@ -12,11 +12,22 @@ from src.contentforge.schemas import (
     FactCheckReport,
     KeywordCoverage,
     KeywordReport,
+    LinkedInPost,
     ResearchBrief,
     Source,
 )
 
-ALL_NEW = [KeywordReport, Source, KeywordCoverage, ResearchBrief, ClaimVerdict, FactCheckReport, CritiqueReport, DocumentMetadata]
+ALL_NEW = [
+    KeywordReport,
+    LinkedInPost,
+    Source,
+    KeywordCoverage,
+    ResearchBrief,
+    ClaimVerdict,
+    FactCheckReport,
+    CritiqueReport,
+    DocumentMetadata,
+]
 
 
 def test_research_brief_round_trips():
@@ -39,6 +50,15 @@ def test_minimal_construction_uses_defaults():
 def test_credibility_is_constrained():
     with pytest.raises(ValueError):
         ClaimVerdict(claim="c", verdict="probably-fine")
+
+
+def test_linkedin_post_defaults_and_link_placement():
+    post = LinkedInPost(hook="A hook.", body=["line one", "line two"], hashtags=["#ai"])
+    assert post.link_placement == "first_comment"
+    assert post.link_url is None
+    assert LinkedInPost.model_validate_json(post.model_dump_json()) == post
+    with pytest.raises(ValueError):
+        LinkedInPost(link_placement="second_comment")
 
 
 @pytest.mark.parametrize("model", ALL_NEW)

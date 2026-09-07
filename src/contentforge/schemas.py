@@ -33,6 +33,24 @@ class BlogContent(BaseModel):
     sources: List[str]
 
 
+# --------------------------------------------------------------- short-form output
+
+LinkPlacement = Literal["body", "first_comment"]
+
+
+class LinkedInPost(BaseModel):
+    """A LinkedIn post: short by length, original by structure (hook -> turn -> insight ->
+    soft CTA). Composed from the ``ResearchBrief``, not by compressing a blog post.
+    """
+
+    hook: str = ""  # opens the post; the text shown above the ~1,300-char "see more" fold
+    body: List[str] = []  # plain-text stanzas, blank-line separated; NO markdown
+    cta: str = ""  # soft call to action
+    hashtags: List[str] = []  # 3-5, not a blog-length tag list
+    link_url: Optional[str] = None  # outbound link, if any
+    link_placement: LinkPlacement = "first_comment"  # configurable; body-links may be demoted
+
+
 # ------------------------------------------------------------------- keyword report
 
 
