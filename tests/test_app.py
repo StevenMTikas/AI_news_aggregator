@@ -8,7 +8,7 @@ import app as app_module
 from src.contentforge.db import documents as doc_store
 from src.contentforge.db import runs as run_store
 from src.contentforge.projects import ProjectProfile, create_project
-from src.contentforge.schemas import BlogContent, Section
+from src.contentforge.schemas import BlogContent, ResearchBrief, Section
 
 client = TestClient(app_module.app)
 
@@ -276,3 +276,39 @@ def test_delete_project(existing_project):
 
 def test_delete_project_not_found():
     assert client.delete("/api/projects/nope").status_code == 404
+
+
+def test_create_project_with_enrichment_fields():
+    r = client.post("/api/projects", json={
+        "slug": "local-eats", "name": "Local Eats", "audience": "owners", "tone": "warm",
+        "author": "Sam", "subject_focus": "restaurant tech", "banned_phrases": ["delve"],
+        "exclude_domains": ["reddit.com"], "recency_days": 30, "length_overrides": {"blog_post": 900},
+    })
+    assert r.status_code == 201
+    body = client.get("/api/projects/local-eats").json()
+    assert body["subject_focus"] == "restaurant tech"
+    assert body["exclude_domains"] == ["reddit.com"]
+    assert body["length_overrides"] == {"blog_post": 900}
+
+
+# --------------------------------------------------------------------- brief update
+
+
+def test_update_brief_endpoint(monkeypatch, existing_project):
+    from src.contentforge.db import briefs
+
+    bid = briefs.save_brief(
+        ResearchBrief(topic="AI"), project_slug=existing_project.slug, normalized_topic="ai",
+    )
+    called = {}
+    monkeypatch.setattr(
+        app_module, "default_run_service",
+        lambda output_dir: SimpleNamespace(update_brief=lambda project, brief_id: called.update(brief_id=brief_id)),
+    )
+    r = client.post(f"/api/briefs/{bid}/update")
+    assert r.status_code == 200 and r.json()["topic"] == "AI"
+    assert called["brief_id"] == bid
+
+
+def test_update_brief_endpoint_404():
+    assert client.post("/api/briefs/nope/update").status_code == 404

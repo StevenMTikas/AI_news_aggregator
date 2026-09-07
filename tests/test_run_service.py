@@ -109,3 +109,40 @@ def test_unknown_artifact_raises(tmp_path):
     svc = make_service(tmp_path, llm)
     with pytest.raises(ValueError, match="unknown artifact"):
         svc.run_atomic(project(), "topic", artifacts=("podcast",), current_date="2026-09-07")
+
+
+def test_second_topic_is_primed_with_prior_findings(tmp_path):
+    llm = FakeLLMProvider(_research_turns() + _blog_turns("A") + _research_turns() + _blog_turns("B"))
+    svc = make_service(tmp_path, llm)
+    p = project(subject_focus="restaurant technology for independents")
+
+    svc.run_atomic(p, "AI reservation software", current_date="2026-09-07")
+    llm.calls.clear()
+    svc.run_atomic(p, "AI kitchen inventory tools", current_date="2026-09-08")
+
+    keyword_task = llm.calls[0].messages[-1]["content"]
+    assert "Project focus: restaurant technology" in keyword_task
+    assert "already established" in keyword_task  # prior brief summary is fed in
+
+
+def test_update_brief_supersedes_and_records_a_run(tmp_path):
+    from src.contentforge.db import briefs, runs
+
+    llm = FakeLLMProvider(
+        _research_turns() + _blog_turns("A")
+        + [ScriptedResponse(tool_calls=[("web_search", {"query": "q"})]),
+           sr(ResearchBrief(topic="x", summary="fresher picture", key_findings=["new fact"]))]
+    )
+    svc = make_service(tmp_path, llm)
+    p = project()
+
+    r1 = svc.run_atomic(p, "AI reservations", current_date="2026-09-07")
+    old_id = briefs.find_fresh_brief("acme", "ai reservations").id
+
+    updated = svc.update_brief(p, old_id, current_date="2026-10-01")
+
+    assert "fresher picture" in updated.summary
+    assert briefs.get_brief(old_id).brief  # still there, just superseded
+    fresh = briefs.find_fresh_brief("acme", "ai reservations")
+    assert fresh.id != old_id and "fresher picture" in fresh.brief.summary
+    assert any(run.kind == "research" and run.status == "completed" for run in runs.list_runs())

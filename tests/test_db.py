@@ -11,11 +11,15 @@ from src.contentforge.providers.base import SearchResult
 from src.contentforge.schemas import ResearchBrief, Source
 
 
-def test_migration_sets_user_version():
+def test_migrations_applied():
+    from src.contentforge.db.migrations import MIGRATIONS
+
     with db.connection() as conn:
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 1
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == MIGRATIONS[-1][0]
         tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    assert {"project", "run", "research_brief", "document", "cost_event", "serper_cache"} <= tables
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(project)")}
+    assert {"project", "run", "research_brief", "document", "cost_event", "serper_cache", "source"} <= tables
+    assert {"subject_focus", "style_guide", "banned_phrases", "exclude_domains", "length_overrides"} <= cols
 
 
 # ------------------------------------------------------------------------ runs

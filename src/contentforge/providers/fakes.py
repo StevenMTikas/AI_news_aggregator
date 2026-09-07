@@ -48,6 +48,7 @@ class RecordedCall:
     messages: list[dict[str, Any]]
     tools: list[str]
     response_model: str | None
+    model: str | None = None
 
 
 class FakeLLMProvider:
@@ -79,6 +80,7 @@ class FakeLLMProvider:
                 messages=[dict(m) for m in messages],
                 tools=[t.name for t in (tools or ())],
                 response_model=response_model.__name__ if response_model else None,
+                model=model,
             )
         )
         if not self._script:

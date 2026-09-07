@@ -381,7 +381,7 @@ Each phase is independently shippable, ends with `pytest` green (network-free) a
 smoke run. Ordered so the risky middle (CrewAI removal, DB) has a correct reference output on
 either side.
 
-**Progress:** Phase 1 ✅ · Phase 2 ✅ · Phase 3 ✅ · Phase 4 ✅ · Phase 5 ✅ · Phase 6 → next.
+**Progress:** Phase 1 ✅ · Phase 2 ✅ · Phase 3 ✅ · Phase 4 ✅ · Phase 5 ✅ · Phase 6 ✅ · Phase 7 → next.
 
 ### Phase 1 — Correct the current output (reference baseline) · ~45 min · ✅ done
 Minimal slice of the old plan's Phase 1 — only what carries forward:
@@ -487,16 +487,32 @@ Shipped (`src/contentforge/db/`):
   reusable; `render_document` with a `FakeLLMProvider([])` (raises on any call) re-creates
   the `.md`. 121 tests pass.
 
-### Phase 6 — Project enrichment + hybrid KnowledgeStore + brief_updater · ~1–1.5 days
-- Extend `project`: `subject_focus`, `style_guide`, `banned_phrases`, `recency_days`,
-  `min_sources`, `prefer_domains`, `exclude_domains`, `default_model` (+ admin UI / API /
-  CLI).
-- Embeddings on write; `brief_fts` / `doc_fts`; `KnowledgeStore` hybrid retrieval (FTS5 +
-  cosine + RRF).
-- Context priming in the research pipeline (§7.3); `brief_updater_agent` + `brief update`
-  CLI / UI action.
-- **Gate:** a second run on a related topic demonstrably references prior findings (inspect
-  agent context + brief linkage).
+### Phase 6 — Project enrichment + hybrid KnowledgeStore + brief_updater · ~1–1.5 days · ✅ done
+Shipped:
+- Migration **002**: `project` gains `subject_focus`, `style_guide`, `banned_phrases`,
+  `recency_days`, `min_sources`, `prefer_domains`, `exclude_domains`, `default_model`,
+  `length_overrides`; `research_brief.embedding` / `document.embedding` blobs; a `source`
+  table; `brief_fts` / `doc_fts` FTS5 tables. `ProjectProfile` + `projects.py` +
+  `app.py:ProjectFields` + the admin form carry the new fields.
+- `knowledge.py` — `KnowledgeStore`: `index_brief` / `index_document` write an FTS row and
+  (when an `EmbeddingProvider` is set) a packed-float32 embedding; `retrieve()` fuses BM25
+  and brute-force cosine with reciprocal-rank fusion, scopes to the project, trims to a token
+  budget, and tolerates malformed FTS queries. `recent_brief_summaries()` +
+  `format_priming()` build the "what this project already knows" block. FTS-only when no
+  embedder (offline-safe).
+- `RunService`: before new research it primes the pipeline with subject focus + recent brief
+  summaries + retrieval hits, and applies the project's `prefer_domains` / `exclude_domains` /
+  `recency_days` / `min_sources`. After each brief/document it persists sources and indexes
+  into the KnowledgeStore. New `update_brief(project, brief_id)` runs `brief_updater_agent`,
+  saves the result, supersedes the old brief, and records a `research` run.
+  `default_run_service` wires an `OpenAIEmbeddingProvider`.
+- `research.py`: priming threaded into all three agents; `ResearchPipeline.update_brief()`.
+- `agents/library.py`: `BRIEF_UPDATER_AGENT` (roster #9).
+- `app.py`: `POST /api/briefs/{id}/update` (background).
+- **Gate met:** in a fresh project, run 1 on "AI reservation software" then run 2 on
+  "AI kitchen inventory tools" — run 2's keyword-agent prompt contains the project focus, the
+  run-1 brief summary ("no-shows ~20%"), and related prior findings. `update_brief`
+  supersedes and links. 138 tests pass.
 
 ### Phase 7 — Fact-checker, editor, critic, voice, metadata + multi-artifact atomic runs · ~2 days
 - `fact_checker_agent` (with merged claim extraction) on briefs and drafts;
@@ -575,6 +591,6 @@ structural risk; 7 and 8 deliver the new capabilities.
 | 3 | CORS narrowing | Phase 9 |
 | 4 | Persistent task queue | Phase 5 (`run` table) |
 | 5 | Response / generation caching | Phases 4 + 5 (Serper cache table + brief reuse) |
-| 6 | Configurable model | Phases 3 / 6 (`project.default_model`, per-agent override) |
+| 6 | Configurable model | ✅ Phase 6 — `project.default_model` (stored, `/admin`-editable, applied to every agent); per-agent `Agent.model` override also available |
 | 7 | CLI project selection / args | Phase 9 (`typer`) |
 | 8 | CLI project management | Phase 9 (`project` subcommand) |

@@ -35,6 +35,26 @@ def test_create_and_get_project_round_trips_all_fields():
     assert fetched == profile
 
 
+def test_enrichment_fields_round_trip():
+    profile = make_profile(
+        subject_focus="restaurant tech for independents",
+        style_guide="Second person. Numbers over adjectives.",
+        banned_phrases=["delve", "game-changer"],
+        recency_days=30,
+        min_sources=8,
+        prefer_domains=["nrn.com"],
+        exclude_domains=["reddit.com", "youtube.com"],
+        default_model="gpt-4o",
+        length_overrides={"linkedin_post": 200, "blog_post": 900},
+    )
+    projects.create_project(profile)
+    assert projects.get_project("acme-launch") == profile
+
+    updated = projects.update_project("acme-launch", make_profile(exclude_domains=["x.com"], recency_days=None))
+    fetched = projects.get_project("acme-launch")
+    assert fetched.exclude_domains == ["x.com"] and fetched.recency_days is None
+
+
 def test_create_project_rejects_duplicate_slug():
     projects.create_project(make_profile())
     with pytest.raises(ProjectSlugConflictError):

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any, Mapping, Optional
 
 from ..agents.base import AgentBudget
@@ -66,10 +67,13 @@ class BlogPostPipeline:
     ) -> Document:
         target_words = resolve_target_words(self.default_target_words, project, self.document_type)
         variables = _project_vars(project, brief, target_words)
+        model = getattr(project, "default_model", None)
+        writer = replace(self.writer_agent, model=model) if model else self.writer_agent
+        editor = replace(self.editor_agent, model=model) if model else self.editor_agent
 
         draft: BlogContent = run_agent(
             self.llm,
-            self.writer_agent,
+            writer,
             _writer_task(brief),
             variables=variables,
             budget=AgentBudget(max_iterations=2, max_tool_calls=0),
@@ -78,7 +82,7 @@ class BlogPostPipeline:
 
         final: BlogContent = run_agent(
             self.llm,
-            self.editor_agent,
+            editor,
             _editor_task(draft, brief, target_words),
             variables=variables,
             budget=AgentBudget(max_iterations=2, max_tool_calls=0),

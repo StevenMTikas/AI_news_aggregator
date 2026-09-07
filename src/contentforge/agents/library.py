@@ -144,9 +144,36 @@ EDITOR_AGENT = Agent(
 )
 
 
+# ---------------------------------------------------------------- brief updater
+
+
+BRIEF_UPDATER_AGENT = Agent(
+    name="brief_updater_agent",
+    output_schema=ResearchBrief,
+    temperature=0.2,
+    system_prompt=(
+        "You maintain a running research brief on \"{topic}\" for {audience}. You are given "
+        "the CURRENT brief and can run web_search to check what has changed since it was "
+        "written ({current_year}).\n\n"
+        "Search for developments newer than the brief. Then return an UPDATED ResearchBrief "
+        "that:\n"
+        "- keeps findings that still hold\n"
+        "- revises findings that have changed, and drops ones no longer true\n"
+        "- adds genuinely new findings, each with a source\n"
+        "- merges the source lists, keeping url / title / published / takeaway\n"
+        "- updates summary, trends and audience_impact to reflect the current picture\n\n"
+        "Leave keyword_report null. Do not restate the old brief verbatim -- reflect real "
+        "change. If nothing material has changed, return the brief essentially as-is."
+    ),
+)
+
+
 AGENTS = {
     a.name: a
-    for a in (KEYWORD_AGENT, RESEARCH_AGENT, SYNTHESIS_AGENT, BLOG_WRITER_AGENT, EDITOR_AGENT)
+    for a in (
+        KEYWORD_AGENT, RESEARCH_AGENT, SYNTHESIS_AGENT, BLOG_WRITER_AGENT, EDITOR_AGENT,
+        BRIEF_UPDATER_AGENT,
+    )
 }
 
 __all__ = [
@@ -155,5 +182,6 @@ __all__ = [
     "SYNTHESIS_AGENT",
     "BLOG_WRITER_AGENT",
     "EDITOR_AGENT",
+    "BRIEF_UPDATER_AGENT",
     "AGENTS",
 ]

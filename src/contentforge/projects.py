@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -26,6 +26,17 @@ class ProjectProfile(BaseModel):
     target_word_count: int = 800
     notes: Optional[str] = None
 
+    # Phase 6 enrichment -- all optional so older callers/tests are unaffected.
+    subject_focus: str = ""  # what this project is *about*; steers research + retrieval
+    style_guide: str = ""  # free-text voice rules (more expressive than `tone`)
+    banned_phrases: List[str] = Field(default_factory=list)  # exact strings the editor removes
+    recency_days: Optional[int] = None  # research recency window
+    min_sources: int = 5
+    prefer_domains: List[str] = Field(default_factory=list)
+    exclude_domains: List[str] = Field(default_factory=list)
+    default_model: Optional[str] = None
+    length_overrides: Dict[str, int] = Field(default_factory=dict)  # {recipe: word_count}
+
 
 class ProjectNotFoundError(KeyError):
     pass
@@ -40,17 +51,36 @@ def slugify(name: str) -> str:
     return slug or "project"
 
 
+_ENRICH_COLUMNS = (
+    "subject_focus", "style_guide", "banned_phrases", "recency_days", "min_sources",
+    "prefer_domains", "exclude_domains", "default_model", "length_overrides",
+)
+_JSON_COLUMNS = {"category_tags", "banned_phrases", "prefer_domains", "exclude_domains", "length_overrides"}
+
+
 def _row_to_profile(row) -> ProjectProfile:
-    return ProjectProfile(
-        slug=row["slug"],
-        name=row["name"],
-        audience=row["audience"],
-        tone=row["tone"],
-        category_tags=json.loads(row["category_tags"] or "[]"),
-        author=row["author"],
-        target_word_count=row["target_word_count"],
-        notes=row["notes"],
-    )
+    keys = row.keys()
+    data = {
+        "slug": row["slug"],
+        "name": row["name"],
+        "audience": row["audience"],
+        "tone": row["tone"],
+        "category_tags": json.loads(row["category_tags"] or "[]"),
+        "author": row["author"],
+        "target_word_count": row["target_word_count"],
+        "notes": row["notes"],
+    }
+    for col in _ENRICH_COLUMNS:
+        if col in keys and row[col] is not None:
+            data[col] = json.loads(row[col]) if col in _JSON_COLUMNS else row[col]
+    return ProjectProfile(**data)
+
+
+def _write_values(profile: ProjectProfile) -> dict:
+    values = profile.model_dump()
+    for col in _JSON_COLUMNS:
+        values[col] = json.dumps(values[col])
+    return values
 
 
 def list_projects() -> List[ProjectProfile]:
@@ -67,49 +97,33 @@ def get_project(slug: str) -> ProjectProfile:
     return _row_to_profile(row)
 
 
+_COLUMNS = (
+    "slug", "name", "audience", "tone", "category_tags", "author", "target_word_count",
+    "notes", *_ENRICH_COLUMNS,
+)
+
+
 def create_project(profile: ProjectProfile) -> ProjectProfile:
+    values = _write_values(profile)
     with connection() as conn:
-        exists = conn.execute(
-            "SELECT 1 FROM project WHERE slug = ?", (profile.slug,)
-        ).fetchone()
-        if exists:
+        if conn.execute("SELECT 1 FROM project WHERE slug = ?", (profile.slug,)).fetchone():
             raise ProjectSlugConflictError(profile.slug)
+        cols = ", ".join(_COLUMNS) + ", created_at"
+        placeholders = ", ".join(f":{c}" for c in _COLUMNS) + ", :created_at"
         conn.execute(
-            """INSERT INTO project (slug, name, audience, tone, category_tags, author,
-                                    target_word_count, notes, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                profile.slug,
-                profile.name,
-                profile.audience,
-                profile.tone,
-                json.dumps(profile.category_tags),
-                profile.author,
-                profile.target_word_count,
-                profile.notes,
-                utcnow(),
-            ),
+            f"INSERT INTO project ({cols}) VALUES ({placeholders})",
+            {**values, "created_at": utcnow()},
         )
     return profile
 
 
 def update_project(slug: str, profile: ProjectProfile) -> ProjectProfile:
     updated = profile.model_copy(update={"slug": slug})
+    values = _write_values(updated)
+    assignments = ", ".join(f"{c} = :{c}" for c in _COLUMNS if c != "slug")
     with connection() as conn:
         cur = conn.execute(
-            """UPDATE project SET name = ?, audience = ?, tone = ?, category_tags = ?,
-                                  author = ?, target_word_count = ?, notes = ?
-               WHERE slug = ?""",
-            (
-                updated.name,
-                updated.audience,
-                updated.tone,
-                json.dumps(updated.category_tags),
-                updated.author,
-                updated.target_word_count,
-                updated.notes,
-                slug,
-            ),
+            f"UPDATE project SET {assignments} WHERE slug = :slug", {**values, "slug": slug}
         )
         if cur.rowcount == 0:
             raise ProjectNotFoundError(slug)

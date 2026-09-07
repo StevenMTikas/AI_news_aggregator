@@ -19,6 +19,7 @@ class StoredBrief:
     brief: ResearchBrief
     created_at: str
     expires_at: Optional[str]
+    project_slug: Optional[str] = None
 
 
 def save_brief(
@@ -70,6 +71,7 @@ def find_fresh_brief(project_slug: str, normalized_topic: str) -> Optional[Store
         brief=ResearchBrief.model_validate_json(row["content_json"]),
         created_at=row["created_at"],
         expires_at=row["expires_at"],
+        project_slug=row["project_slug"],
     )
 
 
@@ -83,6 +85,7 @@ def get_brief(brief_id: str) -> Optional[StoredBrief]:
         brief=ResearchBrief.model_validate_json(row["content_json"]),
         created_at=row["created_at"],
         expires_at=row["expires_at"],
+        project_slug=row["project_slug"],
     )
 
 

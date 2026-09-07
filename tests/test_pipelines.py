@@ -103,6 +103,13 @@ def test_blog_post_pipeline_passes_brief_id_into_provenance():
     assert doc.based_on_brief_ids == ["brief-7"]
 
 
+def test_blog_post_pipeline_applies_project_model_override():
+    b = BlogContent(title="t", meta_description="m", hook="h", sections=[Section(heading="A", body="b")], key_points=["k"], tags=[], sources=[])
+    llm = FakeLLMProvider([sr(b), sr(b)])
+    BlogPostPipeline(llm).compose(BRIEF, project(default_model="gpt-4o"))
+    assert llm.calls[0].model == "gpt-4o" and llm.calls[1].model == "gpt-4o"
+
+
 # ------------------------------------------------------------------ length
 
 
@@ -110,3 +117,34 @@ def test_resolve_target_words_precedence():
     assert resolve_target_words(800, project(target_word_count=500), "blog_post") == 500
     assert resolve_target_words(800, SimpleNamespace(length_overrides={"blog_post": 300}, target_word_count=500), "blog_post") == 300
     assert resolve_target_words(800, SimpleNamespace(), "blog_post") == 800
+
+
+# --------------------------------------------------------------- brief updater
+
+
+def test_update_brief_reruns_against_existing():
+    prior = ResearchBrief(
+        topic="AI for restaurants", summary="old picture",
+        key_findings=["2025: pilots underway"],
+        keyword_report=KeywordReport(primary_keywords=["ai reservations"]),
+    )
+    updated_out = ResearchBrief(
+        topic="ignored", summary="2026: mainstream",
+        key_findings=["AI hosts now standard", "no-shows down 25%"],
+        sources=[Source(url="https://ex.test/new", takeaway="mainstream in 2026")],
+    )
+    llm = FakeLLMProvider(
+        [
+            ScriptedResponse(tool_calls=[("web_search", {"query": "restaurant ai 2026 update"})]),
+            sr(updated_out),
+        ]
+    )
+    search = NullSearchProvider([SearchResult("New", "https://ex.test/new", "mainstream")])
+
+    result = ResearchPipeline(llm, search).update_brief(prior, audience="owners", current_year=2026)
+
+    assert result.topic == "AI for restaurants"  # preserved
+    assert result.keyword_report.primary_keywords == ["ai reservations"]  # carried over
+    assert "mainstream" in result.summary
+    # the updater saw the old brief
+    assert "old picture" in llm.calls[0].messages[-1]["content"]

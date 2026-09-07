@@ -95,6 +95,43 @@ CREATE TABLE serper_cache (
 );
 """
 
+M002_ENRICH = """
+-- Project enrichment: voice + research strategy knobs (Phase 6).
+ALTER TABLE project ADD COLUMN subject_focus    TEXT NOT NULL DEFAULT '';
+ALTER TABLE project ADD COLUMN style_guide      TEXT NOT NULL DEFAULT '';
+ALTER TABLE project ADD COLUMN banned_phrases   TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE project ADD COLUMN recency_days     INTEGER;
+ALTER TABLE project ADD COLUMN min_sources      INTEGER NOT NULL DEFAULT 5;
+ALTER TABLE project ADD COLUMN prefer_domains   TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE project ADD COLUMN exclude_domains  TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE project ADD COLUMN default_model    TEXT;
+ALTER TABLE project ADD COLUMN length_overrides TEXT NOT NULL DEFAULT '{}';
+
+-- One embedding vector per brief / document, stored as packed float32 bytes.
+ALTER TABLE research_brief ADD COLUMN embedding BLOB;
+ALTER TABLE document       ADD COLUMN embedding BLOB;
+
+-- Sources broken out for retrieval and (Phase 7) per-claim credibility.
+CREATE TABLE source (
+    id           TEXT PRIMARY KEY,
+    brief_id     TEXT REFERENCES research_brief(id) ON DELETE CASCADE,
+    project_slug TEXT,
+    url          TEXT NOT NULL,
+    title        TEXT NOT NULL DEFAULT '',
+    domain       TEXT NOT NULL DEFAULT '',
+    published_at TEXT,
+    takeaway     TEXT NOT NULL DEFAULT '',
+    credibility  TEXT,
+    created_at   TEXT NOT NULL
+);
+CREATE INDEX idx_source_brief ON source(brief_id);
+
+-- Full-text (BM25) half of hybrid retrieval. Populated by the KnowledgeStore.
+CREATE VIRTUAL TABLE brief_fts USING fts5(ref_id UNINDEXED, project_slug UNINDEXED, body);
+CREATE VIRTUAL TABLE doc_fts   USING fts5(ref_id UNINDEXED, project_slug UNINDEXED, body);
+"""
+
 MIGRATIONS: list[tuple[int, str]] = [
     (1, M001_INITIAL),
+    (2, M002_ENRICH),
 ]

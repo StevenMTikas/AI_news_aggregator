@@ -18,6 +18,16 @@ const categoryTagsInput = document.getElementById('categoryTags');
 const authorInput = document.getElementById('author');
 const targetWordCountInput = document.getElementById('targetWordCount');
 const notesInput = document.getElementById('notes');
+const subjectFocusInput = document.getElementById('subjectFocus');
+const styleGuideInput = document.getElementById('styleGuide');
+const bannedPhrasesInput = document.getElementById('bannedPhrases');
+const recencyDaysInput = document.getElementById('recencyDays');
+const minSourcesInput = document.getElementById('minSources');
+const preferDomainsInput = document.getElementById('preferDomains');
+const excludeDomainsInput = document.getElementById('excludeDomains');
+const defaultModelInput = document.getElementById('defaultModel');
+
+const csv = (value) => value.split(',').map((t) => t.trim()).filter(Boolean);
 
 const newProjectBtn = document.getElementById('newProjectBtn');
 const cancelFormBtn = document.getElementById('cancelFormBtn');
@@ -111,6 +121,14 @@ function showForm(project) {
     authorInput.value = project ? project.author : '';
     targetWordCountInput.value = project ? project.target_word_count : 800;
     notesInput.value = project && project.notes ? project.notes : '';
+    subjectFocusInput.value = project ? project.subject_focus || '' : '';
+    styleGuideInput.value = project ? project.style_guide || '' : '';
+    bannedPhrasesInput.value = project ? (project.banned_phrases || []).join(', ') : '';
+    recencyDaysInput.value = project && project.recency_days ? project.recency_days : '';
+    minSourcesInput.value = project ? project.min_sources ?? 5 : 5;
+    preferDomainsInput.value = project ? (project.prefer_domains || []).join(', ') : '';
+    excludeDomainsInput.value = project ? (project.exclude_domains || []).join(', ') : '';
+    defaultModelInput.value = project ? project.default_model || '' : '';
 
     listCard.classList.add('hidden');
     errorCard.classList.add('hidden');
@@ -132,10 +150,18 @@ async function handleSubmit(e) {
         name: nameInput.value.trim(),
         audience: audienceInput.value.trim(),
         tone: toneInput.value.trim(),
-        category_tags: categoryTagsInput.value.split(',').map(t => t.trim()).filter(Boolean),
+        category_tags: csv(categoryTagsInput.value),
         author: authorInput.value.trim(),
         target_word_count: parseInt(targetWordCountInput.value, 10) || 800,
         notes: notesInput.value.trim() || null,
+        subject_focus: subjectFocusInput.value.trim(),
+        style_guide: styleGuideInput.value.trim(),
+        banned_phrases: csv(bannedPhrasesInput.value),
+        recency_days: parseInt(recencyDaysInput.value, 10) || null,
+        min_sources: parseInt(minSourcesInput.value, 10) || 5,
+        prefer_domains: csv(preferDomainsInput.value),
+        exclude_domains: csv(excludeDomainsInput.value),
+        default_model: defaultModelInput.value.trim() || null,
     };
 
     try {

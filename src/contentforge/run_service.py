@@ -20,6 +20,8 @@ from .db import briefs as brief_store
 from .db import costs as cost_store
 from .db import documents as doc_store
 from .db import runs as run_store
+from .db import sources as source_store
+from .knowledge import KnowledgeStore, format_priming
 from .pipelines.base import Document
 from .pipelines.blog_post import BlogPostPipeline
 from .pipelines.research import ResearchPipeline
@@ -63,6 +65,7 @@ class RunService:
         search_provider: SearchProvider,
         output_dir: Path | str,
         renderers: Mapping[str, Any] | None = None,
+        knowledge: Optional[KnowledgeStore] = None,
         search_budget_per_run: int = DEFAULT_SEARCH_BUDGET,
         brief_ttl_days: Optional[int] = BRIEF_TTL_DAYS,
     ) -> None:
@@ -70,6 +73,7 @@ class RunService:
         self.search_provider = search_provider
         self.output_dir = Path(output_dir)
         self.renderers = dict(renderers or {"blog_post": JekyllMarkdownRenderer()})
+        self.knowledge = knowledge or KnowledgeStore()
         self.search_budget_per_run = search_budget_per_run
         self.brief_ttl_days = brief_ttl_days
 
@@ -117,6 +121,7 @@ class RunService:
                     rendered_path=str(path), rendered_format="markdown",
                     based_on_brief_ids=doc.based_on_brief_ids,
                 )
+                self.knowledge.index_document(doc_id, slug, doc.content)
                 documents.append((doc, path))
                 doc_ids.append(doc_id)
 
@@ -160,8 +165,12 @@ class RunService:
             if hit is not None:
                 return hit.brief, hit.id, True
 
-        if hasattr(self.search_provider, "budget"):
-            self.search_provider.budget = SearchBudget(max_calls=self.search_budget_per_run)
+        self._apply_strategy(project)
+        priming = format_priming(
+            getattr(project, "subject_focus", "") or "",
+            self.knowledge.recent_brief_summaries(slug) if slug else [],
+            self.knowledge.retrieve(slug, topic) if slug else [],
+        )
 
         brief = ResearchPipeline(self.llm, self.search_provider, ledger=ledger).run(
             topic,
@@ -170,18 +179,77 @@ class RunService:
             subject_focus=getattr(project, "subject_focus", "") or "",
             recency_days=getattr(project, "recency_days", None),
             min_sources=getattr(project, "min_sources", 5) or 5,
+            priming=priming,
+            model=getattr(project, "default_model", None),
             max_searches=self.search_budget_per_run,
         )
 
+        self._record_search_cost(ledger)
+        brief_id = self._persist_brief(brief, slug, normalized, run_id)
+        return brief, brief_id, False
+
+    def _apply_strategy(self, project) -> None:
+        if hasattr(self.search_provider, "budget"):
+            self.search_provider.budget = SearchBudget(max_calls=self.search_budget_per_run)
+        prefer = {d.lower().removeprefix("www.") for d in getattr(project, "prefer_domains", []) or []}
+        exclude = {d.lower().removeprefix("www.") for d in getattr(project, "exclude_domains", []) or []}
+        if hasattr(self.search_provider, "prefer_domains"):
+            self.search_provider.prefer_domains = prefer
+        if hasattr(self.search_provider, "exclude_domains"):
+            self.search_provider.exclude_domains = exclude
+
+    def _record_search_cost(self, ledger: CostLedger) -> None:
         budget = getattr(self.search_provider, "budget", None)
         if budget is not None and budget.calls_made:
             ledger.record_search("serper", calls=budget.calls_made)
 
+    def _persist_brief(self, brief: ResearchBrief, slug: str, normalized: str, run_id: Optional[str],
+                       supersedes: Optional[str] = None) -> str:
         brief_id = brief_store.save_brief(
             brief, project_slug=slug, normalized_topic=normalized, run_id=run_id,
             ttl_days=self.brief_ttl_days,
         )
-        return brief, brief_id, False
+        if supersedes:
+            brief_store.supersede(supersedes, brief_id)
+        source_store.save_sources(brief_id, slug, brief.sources)
+        self.knowledge.index_brief(brief_id, slug, brief)
+        return brief_id
+
+    def update_brief(self, project: Any, brief_id: str, *, current_date: Optional[str] = None) -> ResearchBrief:
+        """Re-research an existing brief; the new one supersedes it."""
+        current_date = current_date or date.today().isoformat()
+        slug = getattr(project, "slug", "")
+        stored = brief_store.get_brief(brief_id)
+        if stored is None:
+            raise KeyError(brief_id)
+
+        run_id = run_store.create_run(
+            project_slug=slug, topic=stored.brief.topic, kind="research",
+            params={"updates_brief": brief_id},
+        ).id
+        ledger = CostLedger()
+        try:
+            self._apply_strategy(project)
+            updated = ResearchPipeline(self.llm, self.search_provider, ledger=ledger).update_brief(
+                stored.brief,
+                audience=getattr(project, "audience", ""),
+                current_year=int(current_date[:4]),
+                recency_days=getattr(project, "recency_days", None),
+            )
+            self._record_search_cost(ledger)
+            self._persist_brief(
+                updated, slug, normalize_query(stored.brief.topic), run_id, supersedes=brief_id
+            )
+            cost_store.save_ledger(run_id, ledger)
+            totals = cost_store.run_totals(run_id)
+            run_store.update_run(run_id, status="completed", progress=100, message="Brief updated.",
+                                 cost_usd=totals["usd"], search_calls=totals["search_calls"],
+                                 tokens_in=totals["tokens_in"], tokens_out=totals["tokens_out"])
+            return updated
+        except Exception as exc:
+            cost_store.save_ledger(run_id, ledger)
+            run_store.update_run(run_id, status="failed", progress=0, message=f"Error: {exc}", error=str(exc))
+            raise
 
     def _compose_pipeline(self, artifact: str, ledger: CostLedger):
         if artifact == "blog_post":
@@ -228,6 +296,7 @@ def default_run_service(output_dir: Path | str, **overrides: Any) -> RunService:
 
     llm = overrides.pop("llm", None)
     search_provider = overrides.pop("search_provider", None)
+    knowledge = overrides.pop("knowledge", None)
     if llm is None:
         from .providers.openai_provider import OpenAIProvider
 
@@ -241,4 +310,10 @@ def default_run_service(output_dir: Path | str, **overrides: Any) -> RunService:
             cache=SqliteSearchCache(),
             budget=SearchBudget(max_calls=DEFAULT_SEARCH_BUDGET),
         )
-    return RunService(llm=llm, search_provider=search_provider, output_dir=output_dir, **overrides)
+    if knowledge is None:
+        from .providers.openai_provider import OpenAIEmbeddingProvider
+
+        knowledge = KnowledgeStore(embedder=OpenAIEmbeddingProvider())
+    return RunService(
+        llm=llm, search_provider=search_provider, output_dir=output_dir, knowledge=knowledge, **overrides
+    )

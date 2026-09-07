@@ -9,6 +9,7 @@ from .base import Agent, AgentBudget, Tool, render_prompt, search_tool
 from .library import (
     AGENTS,
     BLOG_WRITER_AGENT,
+    BRIEF_UPDATER_AGENT,
     EDITOR_AGENT,
     KEYWORD_AGENT,
     RESEARCH_AGENT,
@@ -27,4 +28,5 @@ __all__ = [
     "SYNTHESIS_AGENT",
     "BLOG_WRITER_AGENT",
     "EDITOR_AGENT",
+    "BRIEF_UPDATER_AGENT",
 ]

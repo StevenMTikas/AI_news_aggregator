@@ -150,6 +150,7 @@ prompt + output-schema pairs, run by a small tool-calling loop
 | `synthesis_agent` | — | `ResearchBrief` | Distils the notes into a clean, source-backed brief. |
 | `blog_writer_agent` | — | `BlogContent` | Drafts the post from the brief, in the project's tone/audience/voice. |
 | `editor_agent` | — | `BlogContent` | Checks claims against the brief, tightens length and structure, removes jargon. |
+| `brief_updater_agent` | web search | `ResearchBrief` | Re-researches a topic against its existing brief — keeps what holds, revises what changed, adds what's new. |
 
 The research pipeline (keyword → research → synthesis) produces a `ResearchBrief`; the blog
 pipeline (writer → editor) composes from it. Audience, tone, author, category tags, and word
@@ -169,11 +170,27 @@ A project is a reusable content profile:
 | `author` | Attribution used in generated front matter |
 | `target_word_count` | Approximate length to aim for |
 | `notes` | Anything else worth steering the agents with |
+| `subject_focus` | What this project is *about* — steers research and which prior work gets reused |
+| `style_guide` | Free-text voice rules (more expressive than `tone`) |
+| `banned_phrases` | Exact strings the editor strips out |
+| `recency_days` | Research recency window (blank = no limit) |
+| `min_sources` | Minimum distinct sources the researcher must find |
+| `prefer_domains` / `exclude_domains` | Bias / drop specific sites in research results |
+| `default_model` | Model override for this project |
+| `length_overrides` | `{recipe: word_count}` per-format length tweaks |
 
 Manage projects at **http://localhost:8000/admin** (list, create, edit, delete — deleting a
-project only removes its profile, already-generated `output/*.md` files are untouched). The same
-operations are available as a JSON API at `/api/projects` if you want to manage projects
-programmatically.
+project only removes its profile, already-generated files are untouched). The same operations
+are available as a JSON API at `/api/projects`.
+
+### Getting smarter over time
+
+Every research brief and generated document is kept and indexed per project (SQLite FTS5 +
+embeddings). Before a new research pass, the pipeline is primed with the project's
+`subject_focus`, recent brief summaries, and the most relevant prior findings — so it builds
+on what the project already knows instead of starting over. `POST /api/briefs/{id}/update`
+re-researches a topic against its existing brief (what's new / changed / gone) and supersedes
+it.
 
 ## 🔌 Structured Output & the API
 
@@ -234,6 +251,7 @@ contentforge/
 │   ├── run_service.py         # orchestration: research -> compose -> render -> write
 │   ├── agent_loop.py          # the tool-calling loop that runs one agent
 │   ├── cost.py                # token/search cost accounting
+│   ├── knowledge.py           # per-project hybrid retrieval (FTS5 + embeddings) + priming
 │   ├── projects.py            # ProjectProfile model + SQLite-backed CRUD
 │   ├── schemas.py             # structured-output models (BlogContent, ResearchBrief, ...)
 │   ├── agents/                # Agent definitions (base + library) + tools

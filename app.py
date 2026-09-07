@@ -16,8 +16,9 @@ from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from src.contentforge.db import init_db
+from src.contentforge.db import briefs as brief_store
 from src.contentforge.db import documents as doc_store
+from src.contentforge.db import init_db
 from src.contentforge.db import runs as run_store
 from src.contentforge.db.runs import Run
 from src.contentforge.main import OUTPUT_DIR
@@ -109,6 +110,15 @@ class ProjectFields(BaseModel):
     author: str
     target_word_count: int = 800
     notes: Optional[str] = None
+    subject_focus: str = ""
+    style_guide: str = ""
+    banned_phrases: List[str] = Field(default_factory=list)
+    recency_days: Optional[int] = None
+    min_sources: int = 5
+    prefer_domains: List[str] = Field(default_factory=list)
+    exclude_domains: List[str] = Field(default_factory=list)
+    default_model: Optional[str] = None
+    length_overrides: dict = Field(default_factory=dict)
 
 
 class ProjectCreateRequest(ProjectFields):
@@ -328,6 +338,26 @@ async def render_document_route(document_id: str):
     except KeyError:
         raise HTTPException(status_code=404, detail="Document not found")
     return {"document_id": document_id, "download_url": _download_url(str(path))}
+
+
+def _update_brief_task(brief_id: str, project_slug: str) -> None:
+    try:
+        project = get_project(project_slug)
+    except ProjectNotFoundError:
+        return
+    try:
+        default_run_service(output_dir=OUTPUT_DIR).update_brief(project, brief_id)
+    except Exception as exc:
+        logger.error("Brief update failed for %s: %s", brief_id, exc)
+
+
+@app.post("/api/briefs/{brief_id}/update")
+async def update_brief_route(brief_id: str, background_tasks: BackgroundTasks):
+    stored = brief_store.get_brief(brief_id)
+    if stored is None:
+        raise HTTPException(status_code=404, detail="Brief not found")
+    background_tasks.add_task(_update_brief_task, brief_id, stored.project_slug or "")
+    return {"brief_id": brief_id, "status": "updating", "topic": stored.brief.topic}
 
 
 @app.get("/download/{filename}")

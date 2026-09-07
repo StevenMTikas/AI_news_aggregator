@@ -43,7 +43,7 @@
                 <form id="projectForm">
                     <div class="form-group">
                         <label for="slug">Slug</label>
-                        <input type="text" id="slug" name="slug" placeholder="e.g., acme-app-launch" required pattern="[a-z0-9-]+">
+                        <input type="text" id="slug" name="slug" placeholder="e.g., acme-app-launch" required pattern="[-a-z0-9]+">
                         <small>Lowercase letters, numbers, and hyphens only. Cannot be changed after creation.</small>
                     </div>
                     <div class="form-group">
@@ -75,6 +75,44 @@
                         <label for="notes">Notes (optional)</label>
                         <textarea id="notes" name="notes" placeholder="Anything else worth steering the agents with"></textarea>
                     </div>
+
+                    <h3>Voice &amp; Research strategy</h3>
+                    <div class="form-group">
+                        <label for="subjectFocus">Subject Focus</label>
+                        <textarea id="subjectFocus" name="subjectFocus" placeholder="What this project is about — steers research and what prior work gets reused"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="styleGuide">Style Guide</label>
+                        <textarea id="styleGuide" name="styleGuide" placeholder="Free-text voice rules, e.g. 'Second person. Concrete numbers over adjectives. Never open with a question.'"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="bannedPhrases">Banned Phrases</label>
+                        <input type="text" id="bannedPhrases" name="bannedPhrases" placeholder="delve, game-changer, in today's fast-paced world">
+                        <small>Comma-separated. The editor removes these exactly.</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="recencyDays">Recency Window (days)</label>
+                        <input type="number" id="recencyDays" name="recencyDays" placeholder="e.g. 30 — leave blank for no limit" min="1" step="1">
+                    </div>
+                    <div class="form-group">
+                        <label for="minSources">Minimum Sources</label>
+                        <input type="number" id="minSources" name="minSources" value="5" min="1" step="1">
+                    </div>
+                    <div class="form-group">
+                        <label for="preferDomains">Prefer Domains</label>
+                        <input type="text" id="preferDomains" name="preferDomains" placeholder="nytimes.com, arxiv.org">
+                        <small>Comma-separated. Ranked higher in research results.</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="excludeDomains">Exclude Domains</label>
+                        <input type="text" id="excludeDomains" name="excludeDomains" placeholder="reddit.com, youtube.com">
+                        <small>Comma-separated. Dropped from research results.</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="defaultModel">Model Override (optional)</label>
+                        <input type="text" id="defaultModel" name="defaultModel" placeholder="e.g. gpt-4o — leave blank for the default">
+                    </div>
+
                     <div class="action-buttons">
                         <button type="submit" class="btn btn-primary" id="saveProjectBtn">
                             <span class="btn-text">Save Project</span>
@@ -95,7 +133,7 @@
             </div>
         </main>
         <footer class="footer">
-            <p>Powered by <strong>CrewAI</strong> & <strong>GPT-4o-mini</strong></p>
+            <p>ContentForge</p>
         </footer>
     </div>
     <script src="/static/admin.js"></script>
