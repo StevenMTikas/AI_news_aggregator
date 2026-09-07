@@ -47,3 +47,6 @@ output/
 .DS_Store
 Thumbs.db
 
+
+# ContentForge data (SQLite db, generated output, backups)
+data/

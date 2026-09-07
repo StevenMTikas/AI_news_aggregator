@@ -14,7 +14,7 @@ warnings.filterwarnings("ignore", category=SyntaxWarning, module="pysbd")
 
 DEFAULT_TOPIC = "Best AI Tools for Restaurants to Boost Reservations"
 DEFAULT_SLUG = "Best AI Tools for Restaurants to Boost Reservations"
-OUTPUT_DIR = Path(__file__).resolve().parents[2] / "output"
+OUTPUT_DIR = Path(__file__).resolve().parents[2] / "data" / "output"
 
 
 def build_default_inputs(

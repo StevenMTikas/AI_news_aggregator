@@ -381,7 +381,7 @@ Each phase is independently shippable, ends with `pytest` green (network-free) a
 smoke run. Ordered so the risky middle (CrewAI removal, DB) has a correct reference output on
 either side.
 
-**Progress:** Phase 1 ✅ · Phase 2 ✅ · Phase 3 ✅ · Phase 4 ✅ · Phase 5 → next.
+**Progress:** Phase 1 ✅ · Phase 2 ✅ · Phase 3 ✅ · Phase 4 ✅ · Phase 5 ✅ · Phase 6 → next.
 
 ### Phase 1 — Correct the current output (reference baseline) · ~45 min · ✅ done
 Minimal slice of the old plan's Phase 1 — only what carries forward:
@@ -457,17 +457,35 @@ Shipped:
   in structure to the Phase 1 baseline. 108 tests pass, `crewai` never imported (suite runs
   ~6× faster). A real-LLM quality comparison is deferred (costs credits).
 
-### Phase 5 — SQLite + persistent RunService · ~1–1.5 days
-- `db/` module, `schema.sql`, migration runner.
-- `project` table replaces the `projects.py` YAML CRUD (keep the function names / API shape;
-  swap storage). One-time YAML importer.
-- `run` table replaces the in-memory `tasks` dict; `/api/status` + `/api/result` read it;
-  SSE stream endpoint.
-- Persist `research_brief` + `source` + `document` + `cost_event`.
-- **Research resolution:** reuse a fresh brief for `(project, normalized_topic)`.
-- `contentforge backup` command.
-- **Gate:** generate → restart process → run history + briefs still present; `render`
-  re-produces the `.md` with no LLM/search calls.
+### Phase 5 — SQLite + persistent RunService · ~1–1.5 days · ✅ done
+Shipped (`src/contentforge/db/`):
+- `migrations.py` — forward-only migrations tracked by `PRAGMA user_version`; `__init__.py`
+  gives one-connection-per-op, a module-global DB path (tests point it at a tmp file), and
+  lazy auto-migration. Tables: `project`, `run`, `research_brief`, `document`, `cost_event`,
+  `serper_cache`. (`source` / FTS / embeddings arrive with Phase 6; briefs store their
+  sources inside `content_json` for now.)
+- `projects.py` rewritten onto the `project` table — same public API, so `app.py` / CLI were
+  untouched. `db/import_yaml.py` — one-time `python -m contentforge.db.import_yaml` importer
+  for the old per-slug YAML files.
+- `db/runs.py` — `Run` model + CRUD; `db/briefs.py` — save + `find_fresh_brief`
+  (not expired, not superseded) + `supersede`; `db/documents.py` — store + re-render lookup;
+  `db/costs.py` — persist a `CostLedger`, run/project rollups; `db/search_cache.py` —
+  `SqliteSearchCache` (the cross-run cache the Phase 3 `InMemorySearchCache` stood in for,
+  TTL 1 d news / 7 d else); `db/backup.py` — `python -m contentforge.db.backup` (online
+  backup API, keeps the last N).
+- `RunService` persists everything: creates a `run` row, resolves the brief from the DB
+  (reuse if fresh), saves brief + documents + cost events, updates run status/progress/totals,
+  marks failed + re-raises on error. New `render_document(id)` re-renders from stored JSON —
+  no LLM, no search.
+- `app.py`: the in-memory `tasks` dict is gone. `/api/generate` inserts a `run`;
+  `/api/status` + `/api/result` read it; added `/api/status/{id}/stream` (SSE),
+  `/api/runs`, `/api/runs/{id}/documents`, `POST /api/documents/{id}/render`. Startup runs
+  migrations via a lifespan handler.
+- `data/` (db + output + backups) git-ignored.
+- **Gate met:** end-to-end smoke — generate writes run + brief + document + file; after a
+  simulated restart (fresh connections) run history and the brief are still there and
+  reusable; `render_document` with a `FakeLLMProvider([])` (raises on any call) re-creates
+  the `.md`. 121 tests pass.
 
 ### Phase 6 — Project enrichment + hybrid KnowledgeStore + brief_updater · ~1–1.5 days
 - Extend `project`: `subject_focus`, `style_guide`, `banned_phrases`, `recency_days`,

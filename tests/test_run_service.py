@@ -78,7 +78,7 @@ def test_second_run_same_topic_reuses_brief(tmp_path):
     r2 = svc.run_atomic(project(), "for  restaurants   AI", current_date="2026-09-08")  # normalises equal
 
     assert r2.reused_brief is True
-    assert r1.brief is r2.brief
+    assert r1.brief == r2.brief  # same content, reloaded from the DB
     assert r2.content.title == "Second"
 
 

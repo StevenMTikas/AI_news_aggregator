@@ -1,7 +1,8 @@
-"""Orchestration: research resolution -> compose -> render -> write.
+"""Orchestration: research resolution -> compose -> render -> write, with SQLite persistence.
 
-In-memory for Phase 4 (brief cache is a dict, run state is the return value). Phase 5 swaps
-the cache and run bookkeeping for SQLite without changing this surface.
+The brief cache, run bookkeeping, document store and cost ledger all live in the database
+(``contentforge.db``), so run history and briefs survive a restart and a document can be
+re-rendered from its stored JSON without any LLM or search call.
 """
 
 from __future__ import annotations
@@ -15,6 +16,10 @@ from typing import Any, Iterable, Mapping, Optional
 from pydantic import BaseModel
 
 from .cost import CostLedger
+from .db import briefs as brief_store
+from .db import costs as cost_store
+from .db import documents as doc_store
+from .db import runs as run_store
 from .pipelines.base import Document
 from .pipelines.blog_post import BlogPostPipeline
 from .pipelines.research import ResearchPipeline
@@ -24,6 +29,7 @@ from .renderers.jekyll import JekyllMarkdownRenderer
 from .schemas import ResearchBrief
 
 DEFAULT_SEARCH_BUDGET = 12
+BRIEF_TTL_DAYS = 7
 
 
 @dataclass
@@ -32,6 +38,8 @@ class RunResult:
     documents: list[tuple[Document, Path]] = field(default_factory=list)
     cost: CostLedger = field(default_factory=CostLedger)
     reused_brief: bool = False
+    run_id: Optional[str] = None
+    document_ids: list[str] = field(default_factory=list)
 
     @property
     def content(self) -> Optional[BaseModel]:
@@ -56,16 +64,14 @@ class RunService:
         output_dir: Path | str,
         renderers: Mapping[str, Any] | None = None,
         search_budget_per_run: int = DEFAULT_SEARCH_BUDGET,
-        brief_cache: dict | None = None,
+        brief_ttl_days: Optional[int] = BRIEF_TTL_DAYS,
     ) -> None:
         self.llm = llm
         self.search_provider = search_provider
         self.output_dir = Path(output_dir)
         self.renderers = dict(renderers or {"blog_post": JekyllMarkdownRenderer()})
         self.search_budget_per_run = search_budget_per_run
-        self._briefs: dict[tuple[str, str], ResearchBrief] = (
-            brief_cache if brief_cache is not None else {}
-        )
+        self.brief_ttl_days = brief_ttl_days
 
     # -- public ----------------------------------------------------------------
 
@@ -75,30 +81,84 @@ class RunService:
         topic: str,
         *,
         artifacts: Iterable[str] = ("blog_post",),
+        topic_slug: Optional[str] = None,
         current_date: Optional[str] = None,
         force_fresh: bool = False,
+        run_id: Optional[str] = None,
     ) -> RunResult:
+        artifacts = list(artifacts)
         current_date = current_date or date.today().isoformat()
+        slug = getattr(project, "slug", "")
         ledger = CostLedger()
 
-        brief, reused = self._resolve_brief(project, topic, int(current_date[:4]), ledger, force_fresh)
+        if run_id is None:
+            run_id = run_store.create_run(
+                project_slug=slug, topic=topic, topic_slug=topic_slug or topic,
+                params={"artifacts": artifacts, "force_fresh": force_fresh},
+            ).id
 
-        documents: list[tuple[Document, Path]] = []
-        for artifact in artifacts:
-            pipeline = self._compose_pipeline(artifact, ledger)
-            doc = pipeline.compose(brief, project)
-            documents.append((doc, self._render_and_write(doc, project, current_date)))
+        try:
+            self._progress(run_id, 5, "running", "Resolving research...")
+            brief, brief_id, reused = self._resolve_brief(
+                project, topic, int(current_date[:4]), ledger, force_fresh, run_id
+            )
 
-        return RunResult(brief=brief, documents=documents, cost=ledger, reused_brief=reused)
+            documents: list[tuple[Document, Path]] = []
+            doc_ids: list[str] = []
+            for i, artifact in enumerate(artifacts):
+                self._progress(run_id, 50 + int(40 * i / len(artifacts)), "running",
+                               f"Composing {artifact}...")
+                pipeline = self._compose_pipeline(artifact, ledger)
+                doc = pipeline.compose(brief, project, brief_id=brief_id)
+                path = self._render_and_write(doc, project, current_date)
+                doc_id = doc_store.save_document(
+                    project_slug=slug, doc_type=doc.type, title=doc.title,
+                    content_json=doc.content.model_dump_json(), run_id=run_id,
+                    rendered_path=str(path), rendered_format="markdown",
+                    based_on_brief_ids=doc.based_on_brief_ids,
+                )
+                documents.append((doc, path))
+                doc_ids.append(doc_id)
+
+            cost_store.save_ledger(run_id, ledger)
+            totals = cost_store.run_totals(run_id)
+            run_store.update_run(
+                run_id, status="completed", progress=100, message="Done.",
+                cost_usd=totals["usd"], search_calls=totals["search_calls"],
+                tokens_in=totals["tokens_in"], tokens_out=totals["tokens_out"],
+            )
+            return RunResult(brief=brief, documents=documents, cost=ledger,
+                             reused_brief=reused, run_id=run_id, document_ids=doc_ids)
+        except Exception as exc:
+            cost_store.save_ledger(run_id, ledger)
+            run_store.update_run(run_id, status="failed", progress=0,
+                                 message=f"Error: {exc}", error=str(exc))
+            raise
+
+    def render_document(self, document_id: str, *, project: Any | None = None) -> Path:
+        """Re-render a stored document to disk. No LLM, no search."""
+        stored = doc_store.get_document(document_id)
+        if stored is None:
+            raise KeyError(document_id)
+        content = self._content_model(stored.type).model_validate_json(stored.content_json)
+        project = project or self._project_for(stored.project_slug)
+        path = self._render_and_write(
+            Document(type=stored.type, content=content, title=stored.title),
+            project,
+            stored.created_at[:10],
+        )
+        doc_store.set_rendered_path(document_id, str(path), "markdown")
+        return path
 
     # -- internals -----------------------------------------------------------------
 
-    def _resolve_brief(
-        self, project: Any, topic: str, year: int, ledger: CostLedger, force_fresh: bool
-    ) -> tuple[ResearchBrief, bool]:
-        key = (getattr(project, "slug", ""), normalize_query(topic))
-        if not force_fresh and key in self._briefs:
-            return self._briefs[key], True
+    def _resolve_brief(self, project, topic, year, ledger, force_fresh, run_id):
+        slug = getattr(project, "slug", "")
+        normalized = normalize_query(topic)
+        if not force_fresh:
+            hit = brief_store.find_fresh_brief(slug, normalized)
+            if hit is not None:
+                return hit.brief, hit.id, True
 
         if hasattr(self.search_provider, "budget"):
             self.search_provider.budget = SearchBudget(max_calls=self.search_budget_per_run)
@@ -117,13 +177,29 @@ class RunService:
         if budget is not None and budget.calls_made:
             ledger.record_search("serper", calls=budget.calls_made)
 
-        self._briefs[key] = brief
-        return brief, False
+        brief_id = brief_store.save_brief(
+            brief, project_slug=slug, normalized_topic=normalized, run_id=run_id,
+            ttl_days=self.brief_ttl_days,
+        )
+        return brief, brief_id, False
 
     def _compose_pipeline(self, artifact: str, ledger: CostLedger):
         if artifact == "blog_post":
             return BlogPostPipeline(self.llm, ledger=ledger)
         raise ValueError(f"unknown artifact type: {artifact!r}")
+
+    def _content_model(self, doc_type: str) -> type[BaseModel]:
+        from .schemas import BlogContent
+
+        return {"blog_post": BlogContent}.get(doc_type) or BlogContent
+
+    def _project_for(self, slug: Optional[str]):
+        from .projects import ProjectNotFoundError, get_project
+
+        try:
+            return get_project(slug) if slug else None
+        except ProjectNotFoundError:
+            return None
 
     def _render_and_write(self, doc: Document, project: Any, current_date: str) -> Path:
         renderer = self.renderers.get(doc.type)
@@ -133,7 +209,7 @@ class RunService:
             doc.content,
             context={
                 "author": getattr(project, "author", ""),
-                "category_tags": list(getattr(project, "category_tags", [])),
+                "category_tags": list(getattr(project, "category_tags", []) or []),
                 "current_date": current_date,
             },
         )
@@ -141,6 +217,10 @@ class RunService:
         path = self.output_dir / artifact.filename
         path.write_bytes(artifact.content)
         return path
+
+    def _progress(self, run_id: Optional[str], pct: int, status: str, message: str) -> None:
+        if run_id:
+            run_store.update_run(run_id, progress=pct, status=status, message=message)
 
 
 def default_run_service(output_dir: Path | str, **overrides: Any) -> RunService:
@@ -153,11 +233,12 @@ def default_run_service(output_dir: Path | str, **overrides: Any) -> RunService:
 
         llm = OpenAIProvider()
     if search_provider is None:
-        from .providers.serper import InMemorySearchCache, SerperSearchProvider
+        from .db.search_cache import SqliteSearchCache
+        from .providers.serper import SerperSearchProvider
 
         search_provider = SerperSearchProvider(
             os.environ.get("SERPER_API_KEY", ""),
-            cache=InMemorySearchCache(),
+            cache=SqliteSearchCache(),
             budget=SearchBudget(max_calls=DEFAULT_SEARCH_BUDGET),
         )
     return RunService(llm=llm, search_provider=search_provider, output_dir=output_dir, **overrides)

@@ -6,8 +6,11 @@ promised but not built.
 
 > Items 1–8 below are all scheduled to be resolved by the rewrite in
 > [ARCHITECTURE_PLAN.md](ARCHITECTURE_PLAN.md) — see its §13 mapping. This file will be
-> pruned as those phases land. **Phases 1–4 done:** CrewAI removed; #1 resolved; the Serper
-> half of #5 (cross-run search cache) and the seam for #6 (configurable model) are in place.
+> pruned as those phases land. **Phases 1–5 done:** CrewAI removed; #1 resolved;
+> #4 resolved (the `run` table replaces the in-memory task dict; Cloud Run's `--max-instances 1`
+> pin is no longer a correctness requirement); #5 done (SQLite cross-run search cache); the
+> seam for #6 (configurable model) is in place. #2 and #3 (API rate limiting, CORS lock)
+> land in Phase 9.
 
 ## 1. ~~`train` / `replay` / `test` CLI commands~~ — resolved (Phase 2)
 

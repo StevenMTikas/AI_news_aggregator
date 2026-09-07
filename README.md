@@ -234,16 +234,22 @@ contentforge/
 │   ├── run_service.py         # orchestration: research -> compose -> render -> write
 │   ├── agent_loop.py          # the tool-calling loop that runs one agent
 │   ├── cost.py                # token/search cost accounting
-│   ├── projects.py            # ProjectProfile model + YAML-backed CRUD storage
+│   ├── projects.py            # ProjectProfile model + SQLite-backed CRUD
 │   ├── schemas.py             # structured-output models (BlogContent, ResearchBrief, ...)
 │   ├── agents/                # Agent definitions (base + library) + tools
 │   ├── pipelines/             # research pipeline + per-format compose recipes
 │   ├── providers/             # LLM / embedding / search protocols + OpenAI & Serper impls
-│   └── renderers/             # JekyllMarkdownRenderer (more formats coming)
+│   ├── renderers/             # JekyllMarkdownRenderer (more formats coming)
+│   └── db/                    # SQLite: migrations, runs, briefs, documents, costs, backup
 ├── tests/                     # Pytest test suite
-└── output/                    # Generated blog posts
-    └── YYYY-MM-DD-[topic]-blog-post.md
+└── data/                      # git-ignored: app.db, output/, backups/
+    ├── app.db
+    └── output/YYYY-MM-DD-[topic]-blog-post.md
 ```
+
+`data/` holds the SQLite database (projects, run history, cached research, generated
+documents, cost ledger) and the rendered files. Back it up with
+`python -m contentforge.db.backup`.
 
 ## 🎨 Customization
 

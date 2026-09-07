@@ -17,8 +17,13 @@ cp ENV_TEMPLATE.txt .env      # then fill in OPENAI_API_KEY and SERPER_API_KEY
 uvicorn app:app --host 127.0.0.1 --port 8000
 ```
 
-Open http://localhost:8000. Generated posts are written to `output/` (this becomes
-`data/output/` once Phase 5 lands).
+Open http://localhost:8000. State lives in `data/`: `data/app.db` (SQLite — projects, run
+history, cached research, generated documents, cost ledger) and `data/output/` (rendered
+files). Back it up with:
+
+```bash
+python -m contentforge.db.backup
+```
 
 For auto-reload during development:
 
@@ -37,7 +42,6 @@ docker run -d --name contentforge \
   -p 8000:8000 \
   --env-file .env \
   -v contentforge-data:/app/data \
-  -v contentforge-output:/app/output \
   contentforge
 ```
 

@@ -1,5 +1,3 @@
-from pathlib import Path
-
 import pytest
 
 from src.contentforge import projects
@@ -8,11 +6,6 @@ from src.contentforge.projects import (
     ProjectProfile,
     ProjectSlugConflictError,
 )
-
-
-@pytest.fixture(autouse=True)
-def isolated_projects_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(projects, "PROJECTS_DIR", tmp_path)
 
 
 def make_profile(**overrides) -> ProjectProfile:
@@ -30,7 +23,7 @@ def make_profile(**overrides) -> ProjectProfile:
     return ProjectProfile(**defaults)
 
 
-def test_list_projects_empty_when_no_dir():
+def test_list_projects_empty_by_default():
     assert projects.list_projects() == []
 
 

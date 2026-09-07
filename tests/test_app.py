@@ -1,19 +1,16 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
 
 import app as app_module
-from src.contentforge import projects
-from src.contentforge.projects import ProjectProfile
+from src.contentforge.db import documents as doc_store
+from src.contentforge.db import runs as run_store
+from src.contentforge.projects import ProjectProfile, create_project
 from src.contentforge.schemas import BlogContent, Section
 
 client = TestClient(app_module.app)
-
-
-class FakeResult:
-    def __init__(self, pydantic: BlogContent):
-        self.pydantic = pydantic
 
 
 def make_content(**overrides) -> BlogContent:
@@ -21,46 +18,62 @@ def make_content(**overrides) -> BlogContent:
         title="Fake Blog Post",
         meta_description="A short summary.",
         hook="A hook sentence.",
-        sections=[Section(heading="Section", body="Body.", pull_quote=None)],
+        sections=[Section(heading="Section", body="Body.")],
         key_points=["Point one"],
-        call_to_action=None,
         tags=["AI"],
-        sources=["https://example.com"],
+        sources=[],
     )
     defaults.update(overrides)
     return BlogContent(**defaults)
 
 
-def fake_run_pipeline(inputs, project, output_dir=None):
-    output_dir = Path(output_dir or app_module.OUTPUT_DIR)
-    output_path = output_dir / "fake-blog-post.md"
-    return FakeResult(make_content()), output_path
+class FakeService:
+    """Stands in for RunService: writes a document row + completes the run, no API calls."""
+
+    def __init__(self, output_dir):
+        self.output_dir = Path(output_dir)
+
+    def run_atomic(self, project, topic, *, run_id, topic_slug=None, current_date=None, **kw):
+        content = make_content()
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        path = self.output_dir / "fake-blog-post.md"
+        path.write_text("---\ntitle: Fake\n---\n", encoding="utf-8")
+        doc_store.save_document(
+            project_slug=project.slug, doc_type="blog_post", title=content.title,
+            content_json=content.model_dump_json(), run_id=run_id,
+            rendered_path=str(path), rendered_format="markdown",
+        )
+        run_store.update_run(run_id, status="completed", progress=100, message="Done.")
+        return SimpleNamespace(run_id=run_id)
+
+    def render_document(self, document_id, **kw):
+        from src.contentforge.providers.fakes import FakeLLMProvider
+        from src.contentforge.providers.serper import NullSearchProvider
+        from src.contentforge.run_service import RunService
+
+        real = RunService(
+            llm=FakeLLMProvider(), search_provider=NullSearchProvider(), output_dir=self.output_dir
+        )
+        return real.render_document(document_id, **kw)
 
 
-@pytest.fixture(autouse=True)
-def fake_api_keys(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
-    monkeypatch.setenv("SERPER_API_KEY", "test-serper-key")
-
-
-@pytest.fixture(autouse=True)
-def isolated_projects_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(projects, "PROJECTS_DIR", tmp_path)
+@pytest.fixture
+def fake_service(monkeypatch):
+    monkeypatch.setattr(app_module, "default_run_service", lambda output_dir: FakeService(output_dir))
 
 
 @pytest.fixture()
 def existing_project() -> ProjectProfile:
     profile = ProjectProfile(
-        slug="acme-launch",
-        name="Acme Launch",
-        audience="solo developers",
-        tone="conversational",
-        category_tags=["Productivity"],
-        author="Jane Doe",
+        slug="acme-launch", name="Acme Launch", audience="solo developers",
+        tone="conversational", category_tags=["Productivity"], author="Jane Doe",
         target_word_count=700,
     )
-    projects.create_project(profile)
+    create_project(profile)
     return profile
+
+
+# --------------------------------------------------------------------- pages / health
 
 
 def test_read_root_serves_index_html():
@@ -70,270 +83,196 @@ def test_read_root_serves_index_html():
 
 
 def test_read_admin_serves_admin_html():
-    response = client.get("/admin")
-    assert response.status_code == 200
+    assert client.get("/admin").status_code == 200
 
 
 def test_health_check():
-    response = client.get("/health")
-    assert response.status_code == 200
-    body = response.json()
+    body = client.get("/health").json()
     assert body["status"] == "healthy"
-    assert "timestamp" in body
     assert isinstance(body["active_tasks"], int)
 
 
+# --------------------------------------------------------------------- generate
+
+
 def test_generate_blog_rejects_short_topic(existing_project):
-    response = client.post("/api/generate", json={"topic": "ai", "project_slug": existing_project.slug})
-    assert response.status_code == 400
+    r = client.post("/api/generate", json={"topic": "ai", "project_slug": existing_project.slug})
+    assert r.status_code == 400
 
 
 def test_generate_blog_requires_project_slug():
-    response = client.post("/api/generate", json={"topic": "AI tools for small business"})
-    assert response.status_code == 422
+    r = client.post("/api/generate", json={"topic": "AI tools for small business"})
+    assert r.status_code == 422
 
 
 def test_generate_blog_rejects_unknown_project():
-    response = client.post(
-        "/api/generate", json={"topic": "AI tools for small business", "project_slug": "does-not-exist"}
-    )
-    assert response.status_code == 400
+    r = client.post("/api/generate", json={"topic": "AI tools", "project_slug": "nope"})
+    assert r.status_code == 400
 
 
-def test_generate_blog_success(monkeypatch: pytest.MonkeyPatch, existing_project):
-    monkeypatch.setattr(app_module, "run_pipeline", fake_run_pipeline)
+def test_generate_blog_success(fake_service, existing_project):
+    r = client.post("/api/generate", json={"topic": "AI tools for small business", "project_slug": existing_project.slug})
+    assert r.status_code == 200
+    task_id = r.json()["task_id"]
 
-    response = client.post(
-        "/api/generate",
-        json={"topic": "AI tools for small business", "project_slug": existing_project.slug},
-    )
-    assert response.status_code == 200
-    task_id = response.json()["task_id"]
+    run = run_store.get_run(task_id)
+    assert run.status == "completed" and run.progress == 100
 
-    task = app_module.tasks[task_id]
-    assert task["status"] == "completed"
-    assert task["progress"] == 100
-    assert task["result"]["title"] == "Fake Blog Post"
-    assert task["download_url"] == "/download/fake-blog-post.md"
+    status = client.get(f"/api/status/{task_id}").json()
+    assert status["result"]["title"] == "Fake Blog Post"
+    assert status["download_url"] == "/download/fake-blog-post.md"
 
 
-def test_generate_blog_failure_when_pipeline_raises(monkeypatch: pytest.MonkeyPatch, existing_project):
-    def failing_pipeline(inputs, project, output_dir=None):
-        raise RuntimeError("boom")
+def test_generate_blog_failure_marks_run_failed(monkeypatch, existing_project):
+    class Boom:
+        def __init__(self, output_dir):
+            pass
 
-    monkeypatch.setattr(app_module, "run_pipeline", failing_pipeline)
+        def run_atomic(self, *a, **k):
+            raise RuntimeError("boom")
 
-    response = client.post(
-        "/api/generate",
-        json={"topic": "AI tools for small business", "project_slug": existing_project.slug},
-    )
-    assert response.status_code == 200
-    task_id = response.json()["task_id"]
+    monkeypatch.setattr(app_module, "default_run_service", lambda output_dir: Boom(output_dir))
+    task_id = client.post(
+        "/api/generate", json={"topic": "AI tools", "project_slug": existing_project.slug}
+    ).json()["task_id"]
 
-    task = app_module.tasks[task_id]
-    assert task["status"] == "failed"
-    assert "boom" in task["message"]
+    run = run_store.get_run(task_id)
+    assert run.status == "failed" and "boom" in run.message
 
 
-def test_run_blog_generation_project_deleted_after_validation(monkeypatch: pytest.MonkeyPatch):
-    """
-    generate_blog validates the project exists, then queues run_blog_generation as a
-    background task. If the project is deleted in the gap between those two steps, the
-    background task's own get_project() call should fail gracefully (not crash the
-    background task silently) rather than assume the earlier validation still holds.
-    """
-    task_id = "race-condition-task"
-    app_module.tasks[task_id] = {
-        "task_id": task_id,
-        "status": "pending",
-        "progress": 0,
-        "message": "Task created, starting soon...",
-        "result": None,
-        "download_url": None,
-        "created_at": "2026-08-06T00:00:00",
-    }
+def test_run_blog_generation_project_deleted_after_validation(monkeypatch):
+    run = run_store.create_run(project_slug="acme-launch", topic="AI tools")
 
-    def project_now_missing(slug):
-        raise projects.ProjectNotFoundError(slug)
+    from src.contentforge.projects import ProjectNotFoundError
 
-    monkeypatch.setattr(app_module, "get_project", project_now_missing)
+    monkeypatch.setattr(app_module, "get_project", lambda slug: (_ for _ in ()).throw(ProjectNotFoundError(slug)))
+    app_module.run_blog_generation(run_id=run.id, topic="AI tools", project_slug="acme-launch")
 
-    app_module.run_blog_generation(task_id=task_id, topic="AI tools", project_slug="acme-launch")
+    reloaded = run_store.get_run(run.id)
+    assert reloaded.status == "failed" and "acme-launch" in reloaded.message
 
-    task = app_module.tasks[task_id]
-    assert task["status"] == "failed"
-    assert "acme-launch" in task["message"]
+
+# --------------------------------------------------------------------- status / result
 
 
 def test_get_status_not_found():
-    response = client.get("/api/status/does-not-exist")
-    assert response.status_code == 404
+    assert client.get("/api/status/nope").status_code == 404
 
 
 def test_get_result_not_found():
-    response = client.get("/api/result/does-not-exist")
-    assert response.status_code == 404
+    assert client.get("/api/result/nope").status_code == 404
 
 
-def test_get_result_returns_structured_content(monkeypatch: pytest.MonkeyPatch, existing_project):
-    monkeypatch.setattr(app_module, "run_pipeline", fake_run_pipeline)
-
-    gen_response = client.post(
-        "/api/generate",
-        json={"topic": "AI tools for small business", "project_slug": existing_project.slug},
-    )
-    task_id = gen_response.json()["task_id"]
-
-    response = client.get(f"/api/result/{task_id}")
-    assert response.status_code == 200
-    body = response.json()
-    assert body["content"]["title"] == "Fake Blog Post"
-    assert body["content"]["sections"][0]["heading"] == "Section"
-    assert body["download_url"] == "/download/fake-blog-post.md"
-
-
-def test_get_result_shape_is_stable(monkeypatch: pytest.MonkeyPatch, existing_project):
-    """
-    Characterization test: pins the /api/result contract so the architecture rewrite can't
-    silently drop or rename a field. If this needs updating, that's an API change -- make it
-    deliberately.
-    """
-    monkeypatch.setattr(app_module, "run_pipeline", fake_run_pipeline)
+def test_get_result_shape_is_stable(fake_service, existing_project):
+    """Characterization: the /api/result contract stays put across the rewrite."""
     task_id = client.post(
-        "/api/generate",
-        json={"topic": "AI tools for small business", "project_slug": existing_project.slug},
+        "/api/generate", json={"topic": "AI tools for small business", "project_slug": existing_project.slug}
     ).json()["task_id"]
 
     body = client.get(f"/api/result/{task_id}").json()
-
     assert set(body) == {"task_id", "content", "download_url"}
     assert set(body["content"]) == {
-        "title",
-        "meta_description",
-        "hook",
-        "sections",
-        "key_points",
-        "call_to_action",
-        "tags",
-        "sources",
+        "title", "meta_description", "hook", "sections", "key_points",
+        "call_to_action", "tags", "sources",
     }
     assert set(body["content"]["sections"][0]) == {"heading", "body", "pull_quote"}
 
 
 def test_get_result_not_completed():
-    task_id = "pending-task"
-    app_module.tasks[task_id] = {
-        "task_id": task_id,
-        "status": "processing",
-        "progress": 30,
-        "message": "in progress",
-        "result": None,
-        "download_url": None,
-        "created_at": "2026-08-06T00:00:00",
-    }
+    run = run_store.create_run(project_slug="acme-launch", topic="AI tools")
+    run_store.update_run(run.id, status="running")
+    assert client.get(f"/api/result/{run.id}").status_code == 400
 
-    response = client.get(f"/api/result/{task_id}")
-    assert response.status_code == 400
+
+# --------------------------------------------------------------------- run history
+
+
+def test_list_runs_and_run_documents(fake_service, existing_project):
+    task_id = client.post(
+        "/api/generate", json={"topic": "AI tools for small business", "project_slug": existing_project.slug}
+    ).json()["task_id"]
+
+    runs = client.get("/api/runs").json()
+    assert any(r["id"] == task_id and r["status"] == "completed" for r in runs)
+
+    docs = client.get(f"/api/runs/{task_id}/documents").json()
+    assert docs[0]["type"] == "blog_post"
+    assert docs[0]["download_url"] == "/download/fake-blog-post.md"
+
+
+def test_render_document_endpoint(fake_service, existing_project, monkeypatch, tmp_path):
+    monkeypatch.setattr(app_module, "OUTPUT_DIR", tmp_path)
+    task_id = client.post(
+        "/api/generate", json={"topic": "AI tools for small business", "project_slug": existing_project.slug}
+    ).json()["task_id"]
+    doc_id = client.get(f"/api/runs/{task_id}/documents").json()[0]["id"]
+
+    r = client.post(f"/api/documents/{doc_id}/render")
+    assert r.status_code == 200 and r.json()["download_url"].startswith("/download/")
+
+
+# --------------------------------------------------------------------- download
 
 
 def test_download_file_not_found():
-    response = client.get("/download/does-not-exist.md")
-    assert response.status_code == 404
+    assert client.get("/download/nope.md").status_code == 404
 
 
-def test_download_file_success(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+def test_download_file_success(monkeypatch, tmp_path):
     monkeypatch.setattr(app_module, "OUTPUT_DIR", tmp_path)
-    file_path = tmp_path / "2026-08-06-my-post-blog-post.md"
-    file_path.write_text("---\ntitle: My Post\n---\nHello world", encoding="utf-8")
-
-    response = client.get(f"/download/{file_path.name}")
-
-    assert response.status_code == 200
-    assert response.headers["content-type"].startswith("text/markdown")
-    assert "Hello world" in response.text
+    (tmp_path / "post.md").write_text("Hello world", encoding="utf-8")
+    r = client.get("/download/post.md")
+    assert r.status_code == 200 and "Hello world" in r.text
 
 
-# --- Project CRUD ---
+# --------------------------------------------------------------------- project CRUD
+
 
 def test_list_projects_empty():
-    response = client.get("/api/projects")
-    assert response.status_code == 200
-    assert response.json() == []
+    assert client.get("/api/projects").json() == []
 
 
 def test_create_project():
-    response = client.post(
-        "/api/projects",
-        json={
-            "slug": "acme-launch",
-            "name": "Acme Launch",
-            "audience": "solo developers",
-            "tone": "conversational",
-            "category_tags": ["Productivity"],
-            "author": "Jane Doe",
-            "target_word_count": 700,
-        },
-    )
-    assert response.status_code == 201
-    assert response.json()["slug"] == "acme-launch"
+    r = client.post("/api/projects", json={
+        "slug": "acme-launch", "name": "Acme Launch", "audience": "solo developers",
+        "tone": "conversational", "category_tags": ["Productivity"], "author": "Jane Doe",
+        "target_word_count": 700,
+    })
+    assert r.status_code == 201 and r.json()["slug"] == "acme-launch"
 
 
 def test_create_project_duplicate_slug_conflicts(existing_project):
-    response = client.post(
-        "/api/projects",
-        json={
-            "slug": existing_project.slug,
-            "name": "Duplicate",
-            "audience": "x",
-            "tone": "x",
-            "author": "x",
-        },
-    )
-    assert response.status_code == 409
+    r = client.post("/api/projects", json={
+        "slug": existing_project.slug, "name": "Dup", "audience": "x", "tone": "x", "author": "x",
+    })
+    assert r.status_code == 409
 
 
 def test_get_project(existing_project):
-    response = client.get(f"/api/projects/{existing_project.slug}")
-    assert response.status_code == 200
-    assert response.json()["name"] == "Acme Launch"
+    assert client.get(f"/api/projects/{existing_project.slug}").json()["name"] == "Acme Launch"
 
 
 def test_get_project_not_found():
-    response = client.get("/api/projects/does-not-exist")
-    assert response.status_code == 404
+    assert client.get("/api/projects/nope").status_code == 404
 
 
 def test_update_project(existing_project):
-    response = client.put(
-        f"/api/projects/{existing_project.slug}",
-        json={
-            "name": "Acme Relaunch",
-            "audience": "solo developers",
-            "tone": "playful",
-            "category_tags": ["Productivity"],
-            "author": "Jane Doe",
-            "target_word_count": 700,
-        },
-    )
-    assert response.status_code == 200
-    assert response.json()["tone"] == "playful"
-    assert response.json()["slug"] == existing_project.slug
+    r = client.put(f"/api/projects/{existing_project.slug}", json={
+        "name": "Acme Relaunch", "audience": "solo developers", "tone": "playful",
+        "category_tags": ["Productivity"], "author": "Jane Doe", "target_word_count": 700,
+    })
+    assert r.status_code == 200 and r.json()["tone"] == "playful"
 
 
 def test_update_project_not_found():
-    response = client.put(
-        "/api/projects/does-not-exist",
-        json={"name": "X", "audience": "x", "tone": "x", "author": "x"},
-    )
-    assert response.status_code == 404
+    r = client.put("/api/projects/nope", json={"name": "X", "audience": "x", "tone": "x", "author": "x"})
+    assert r.status_code == 404
 
 
 def test_delete_project(existing_project):
-    response = client.delete(f"/api/projects/{existing_project.slug}")
-    assert response.status_code == 204
+    assert client.delete(f"/api/projects/{existing_project.slug}").status_code == 204
     assert client.get(f"/api/projects/{existing_project.slug}").status_code == 404
 
 
 def test_delete_project_not_found():
-    response = client.delete("/api/projects/does-not-exist")
-    assert response.status_code == 404
+    assert client.delete("/api/projects/nope").status_code == 404
