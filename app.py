@@ -433,15 +433,38 @@ async def list_runs_route(project_slug: Optional[str] = None, limit: int = 50,
     ]
 
 
+def _doc_json(d) -> dict:
+    return {
+        "id": d.id,
+        "type": d.type,
+        "title": d.title,
+        "review_status": d.review_status,
+        "review_notes": d.review_notes,
+        "based_on_brief_ids": d.based_on_brief_ids,
+        "based_on_document_ids": d.based_on_document_ids,
+        "download_url": _download_url(d.rendered_path),
+    }
+
+
 @app.get("/api/runs/{run_id}/documents")
 async def run_documents_route(run_id: str):
     if run_store.get_run(run_id) is None:
         raise HTTPException(status_code=404, detail="Run not found")
-    docs = doc_store.list_documents(run_id=run_id)
-    return [
-        {"id": d.id, "type": d.type, "title": d.title, "download_url": _download_url(d.rendered_path)}
-        for d in docs
-    ]
+    return [_doc_json(d) for d in doc_store.list_documents(run_id=run_id)]
+
+
+@app.get("/api/runs/{run_id}")
+async def run_detail_route(run_id: str):
+    from src.contentforge.db import costs as cost_store
+
+    run = run_store.get_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return {
+        "run": run.model_dump(),
+        "cost_breakdown": cost_store.run_breakdown(run_id),
+        "documents": [_doc_json(d) for d in doc_store.list_documents(run_id=run_id)],
+    }
 
 
 @app.post("/api/documents/{document_id}/render", dependencies=[protected])

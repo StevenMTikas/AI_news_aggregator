@@ -291,11 +291,15 @@ function checkFreshResearch() {
     if (!status || !slug || topic.length < 3) { if (status) status.textContent = ''; return; }
     freshCheckTimer = setTimeout(async () => {
         try {
-            const r = await fetch(`/api/briefs/fresh?project_slug=${encodeURIComponent(slug)}&topic=${encodeURIComponent(topic)}`);
-            const d = await r.json();
-            status.textContent = d.fresh
-                ? `✓ fresh research from ${d.created_at.slice(0, 10)} will be reused — no search cost`
+            const [fresh, cost] = await Promise.all([
+                fetch(`/api/briefs/fresh?project_slug=${encodeURIComponent(slug)}&topic=${encodeURIComponent(topic)}`).then((r) => r.json()),
+                fetch(`/api/costs?project_slug=${encodeURIComponent(slug)}`).then((r) => r.json()),
+            ]);
+            const research = fresh.fresh
+                ? `✓ fresh research from ${fresh.created_at.slice(0, 10)} will be reused — no search cost`
                 : 'will run new research (Serper credits)';
+            const spent = cost && cost.usd ? `  ·  $${cost.usd.toFixed(2)} spent on this project so far` : '';
+            status.textContent = research + spent;
         } catch (_) { status.textContent = ''; }
     }, 400);
 }

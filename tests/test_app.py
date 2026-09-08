@@ -200,6 +200,19 @@ def test_list_runs_and_run_documents(fake_service, existing_project):
     docs = client.get(f"/api/runs/{task_id}/documents").json()
     assert docs[0]["type"] == "blog_post"
     assert docs[0]["download_url"] == "/download/fake-blog-post.md"
+    assert "review_status" in docs[0] and "based_on_brief_ids" in docs[0]
+
+
+def test_run_detail_route(fake_service, existing_project):
+    task_id = client.post(
+        "/api/generate", json={"topic": "AI tools for small business", "project_slug": existing_project.slug}
+    ).json()["task_id"]
+
+    body = client.get(f"/api/runs/{task_id}").json()
+    assert set(body) == {"run", "cost_breakdown", "documents"}
+    assert body["run"]["id"] == task_id
+    assert isinstance(body["cost_breakdown"], list)
+    assert client.get("/api/runs/nope").status_code == 404
 
 
 def test_generate_multiple_artifacts(fake_service, existing_project):

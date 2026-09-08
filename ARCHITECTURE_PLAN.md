@@ -1,11 +1,14 @@
-# Architecture Rewrite — Master Plan (Final)
+# Architecture Rewrite — Master Plan + Build Log
+
+> **Status: complete.** All 10 phases shipped (§11). This doc is now the design reference +
+> the record of how it was built. `CHANGELOG.md` has the summary.
 
 One combined plan covering the prompt-chain fixes **and** the full architecture upgrade, run
-as a single campaign before any real projects are added.
+as a single campaign before any real projects were added.
 
-Supersedes [PROMPT_CHAIN_IMPROVEMENT_PLAN.md](PROMPT_CHAIN_IMPROVEMENT_PLAN.md): that
-document's Phase 1 becomes **Phase 1** here; its Phases 2–5 are absorbed into Phases 4, 7 and
-8 (CrewAI is being removed, so its `crew.py` / `tasks.yaml` edits no longer apply).
+Superseded [PROMPT_CHAIN_IMPROVEMENT_PLAN.md](PROMPT_CHAIN_IMPROVEMENT_PLAN.md): that
+document's Phase 1 became **Phase 1** here; its Phases 2–5 were absorbed into Phases 4, 7 and
+8 (CrewAI was removed, so its `crew.py` / `tasks.yaml` edits no longer applied).
 
 ---
 
@@ -381,7 +384,7 @@ Each phase is independently shippable, ends with `pytest` green (network-free) a
 smoke run. Ordered so the risky middle (CrewAI removal, DB) has a correct reference output on
 either side.
 
-**Progress:** Phase 1–9 ✅ · Phase 10 → next.
+**Progress:** Phase 1–10 ✅ — complete.
 
 ### Phase 1 — Correct the current output (reference baseline) · ~45 min · ✅ done
 Minimal slice of the old plan's Phase 1 — only what carries forward:
@@ -605,14 +608,35 @@ tested, and the substance (the new screens, SSE instead of polling) landed witho
 reads stay open); rate limiter and budget-cap `partial` both covered; the CLI exercised via
 `typer.testing.CliRunner`; the reworked pages verified in a browser.
 
-### Phase 10 — Cost ledger + polish · ~half day
-- `/api/costs` + per-project / per-run rollups; the cost widget.
-- `future-ideas.md`: close #1 (train/replay → runs + re-render + brief_updater), #2, #3, #4,
-  #5, #6, #7, #8. Delete the dead `train`/`replay`/`test` entry points.
-- Optional: swap brute-force cosine for `sqlite-vec` if the corpus has grown enough to matter.
+### Phase 10 — Cost ledger + polish · ~half day · ✅ done
+- `/api/costs` (per-project rollup) landed in Phase 9; Phase 10 adds `cost.run_breakdown()`
+  (by kind + model) and `GET /api/runs/{id}` (run + breakdown + documents-with-provenance).
+  The `/runs` detail view shows the cost table, each document's `review_status` / notes, and
+  which briefs/docs it drew on; the generate page's status line also shows project spend.
+- `future-ideas.md` retired to a short "all resolved — see §13" stub + a few genuinely-new
+  ideas. The dead `train` / `replay` / `test` entry points were removed back in Phase 2.
+- `sqlite-vec`: **not done** — the corpus is personal-scale and brute-force cosine is fine;
+  the `KnowledgeStore` interface hides it, so it's a drop-in later. Left as a future idea.
+- Wrap-up: `CHANGELOG.md`; `contentforge.__version__`; `.gitattributes` (LF normalization);
+  README back-half rewritten (API table, customization, troubleshooting); clean-install
+  verified in a fresh venv (`pip install -e .` → `contentforge --help`).
+- **Gate:** 182 pytest + 13 vitest.
 
-**Rough total: ~12–16 working days.** Phases 1–2 are safe warm-ups; 4 and 5 carry the
-structural risk; 7 and 8 deliver the new capabilities.
+---
+
+## Epilogue — where it landed vs. the plan
+
+Built as designed. Deliberate deviations, all noted in their phase:
+- **PDF engine:** ReportLab (works on Windows with no system libs) is the default;
+  WeasyPrint is a `[pdf]` extra. §1 preferred WeasyPrint.
+- **Frontend:** vanilla JS, not htmx. Small, tested, and SSE landed without it.
+- **`sqlite-vec`:** deferred (see Phase 10).
+- **`source.snippet` for verification:** the brief fact-check works from `source.takeaway`,
+  not a captured page snippet. Capturing snippets would make it stronger — a future refinement.
+
+Not in scope (were never planned): podcast TTS audio, scheduled runs, multi-user.
+
+**Rough total estimate was ~12–16 working days.**
 
 ---
 

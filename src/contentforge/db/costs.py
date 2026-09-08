@@ -36,6 +36,20 @@ def run_totals(run_id: str) -> dict:
     return dict(row)
 
 
+def run_breakdown(run_id: str) -> list[dict]:
+    """Cost grouped by kind + model, for a run-detail view."""
+    with connection() as conn:
+        rows = conn.execute(
+            """SELECT kind, model,
+                      SUM(tokens_in) AS tokens_in, SUM(tokens_out) AS tokens_out,
+                      SUM(calls) AS calls, SUM(usd) AS usd
+               FROM cost_event WHERE run_id = ?
+               GROUP BY kind, model ORDER BY usd DESC""",
+            (run_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def project_totals(project_slug: str) -> dict:
     with connection() as conn:
         row = conn.execute(

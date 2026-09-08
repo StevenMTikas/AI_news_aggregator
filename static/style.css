@@ -456,3 +456,7 @@ body {
 .status-failed { color: #ef4444; }
 .status-partial { color: #f59e0b; }
 .status-running, .status-pending { color: #6366f1; }
+.review-reviewed { color: #10b981; font-size: 0.8rem; }
+.review-flagged { color: #f59e0b; font-size: 0.8rem; }
+.review-unreviewed { color: #999; font-size: 0.8rem; }
+.prov { color: #888; margin-left: 0.4rem; }

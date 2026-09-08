@@ -101,12 +101,19 @@ def test_cost_ledger_persists_and_rolls_up():
     run = runs.create_run(project_slug="p", topic="t")
     ledger = CostLedger()
     ledger.record_llm("openai", "gpt-4o-mini", 1000, 400)
+    ledger.record_llm("openai", "gpt-4o-mini", 500, 100)
     ledger.record_search("serper", calls=2)
     costs.save_ledger(run.id, ledger)
 
     totals = costs.run_totals(run.id)
-    assert totals["tokens_in"] == 1000 and totals["search_calls"] == 2 and totals["usd"] > 0
+    assert totals["tokens_in"] == 1500 and totals["search_calls"] == 2 and totals["usd"] > 0
     assert costs.project_totals("p")["runs"] == 1
+
+    bd = costs.run_breakdown(run.id)
+    kinds = {b["kind"] for b in bd}
+    assert kinds == {"llm", "search"}
+    llm_row = next(b for b in bd if b["kind"] == "llm")
+    assert llm_row["tokens_in"] == 1500 and llm_row["calls"] == 2  # two turns aggregated
 
 
 # --------------------------------------------------------------- search cache

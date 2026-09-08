@@ -60,23 +60,44 @@ function rowFor(r) {
 }
 
 async function showDetail(runId) {
-    const docs = await fetch(`/api/runs/${runId}/documents`).then((r) => r.json());
-    detailTitle.textContent = 'Run ' + runId.slice(0, 8);
-    detailMeta.textContent = `${docs.length} document(s)`;
-    detailDocs.innerHTML = docs.length
+    const detail = await fetch(`/api/runs/${runId}`).then((r) => r.json());
+    const run = detail.run;
+    detailTitle.textContent = `${run.kind} — ${run.topic}`;
+    detailMeta.innerHTML =
+        `<span class="status-${run.status}">${run.status}</span> · ` +
+        `$${(run.cost_usd || 0).toFixed(4)} · ${run.tokens_in + run.tokens_out} tokens · ` +
+        `${run.search_calls} searches · ${run.created_at.slice(0, 16).replace('T', ' ')}` +
+        (run.message ? `<br><em>${escapeHtml(run.message)}</em>` : '');
+
+    const bd = detail.cost_breakdown || [];
+    const breakdown = bd.length
+        ? `<table class="project-table"><thead><tr><th>kind</th><th>model</th><th>tokens</th><th>$</th></tr></thead><tbody>` +
+          bd.map((b) => `<tr><td>${b.kind}</td><td>${escapeHtml(b.model || '-')}</td><td>${(b.tokens_in || 0) + (b.tokens_out || 0)}</td><td>$${(b.usd || 0).toFixed(4)}</td></tr>`).join('') +
+          `</tbody></table>`
+        : '';
+
+    const docs = detail.documents || [];
+    detailDocs.innerHTML = breakdown + (docs.length
         ? docs.map(docRow).join('')
-        : '<p class="empty-state">No documents.</p>';
+        : '<p class="empty-state">No documents.</p>');
     detailDocs.querySelectorAll('[data-render]').forEach((btn) => {
         btn.addEventListener('click', () => rerender(btn.dataset.render, btn));
     });
     detailCard.classList.remove('hidden');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    detailCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function docRow(d) {
     const dl = d.download_url ? `<a class="btn btn-secondary btn-small" href="${d.download_url}">Download</a>` : '';
+    const review = d.type === 'metadata' ? '' :
+        `<span class="review-${d.review_status}">${d.review_status}</span>` +
+        (d.review_notes ? ` <small>${escapeHtml(d.review_notes)}</small>` : '');
+    const prov = (d.based_on_brief_ids || []).length
+        ? `<small class="prov">from ${d.based_on_brief_ids.length} brief(s)` +
+          ((d.based_on_document_ids || []).length ? `, ${d.based_on_document_ids.length} doc(s)` : '') + '</small>'
+        : '';
     return `<div class="doc-row">
-        <strong>${escapeHtml(d.type)}</strong> — ${escapeHtml(d.title || '(untitled)')}
+        <strong>${escapeHtml(d.type)}</strong> — ${escapeHtml(d.title || '(untitled)')} ${review} ${prov}
         <span class="doc-actions">${dl}
             <button class="btn btn-secondary btn-small" data-render="${d.id}">Re-render</button>
         </span>
