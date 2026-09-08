@@ -12,13 +12,14 @@ from ..schemas import ResearchBrief
 
 @dataclass
 class Document:
-    """One composed artifact, in memory. Becomes a ``document`` row in Phase 5."""
+    """One composed artifact, in memory. Becomes a ``document`` row in the database."""
 
     type: str
     content: BaseModel  # BlogContent, LinkedInPost, ...
     title: str = ""
     based_on_brief_ids: List[str] = field(default_factory=list)
     based_on_document_ids: List[str] = field(default_factory=list)
+    review_status: str = "unreviewed"
     review_notes: str = ""
 
 

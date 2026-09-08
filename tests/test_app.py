@@ -33,16 +33,18 @@ class FakeService:
     def __init__(self, output_dir):
         self.output_dir = Path(output_dir)
 
-    def run_atomic(self, project, topic, *, run_id, topic_slug=None, current_date=None, **kw):
-        content = make_content()
+    def run_atomic(self, project, topic, *, run_id, topic_slug=None, current_date=None,
+                   artifacts=("blog_post",), **kw):
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        path = self.output_dir / "fake-blog-post.md"
-        path.write_text("---\ntitle: Fake\n---\n", encoding="utf-8")
-        doc_store.save_document(
-            project_slug=project.slug, doc_type="blog_post", title=content.title,
-            content_json=content.model_dump_json(), run_id=run_id,
-            rendered_path=str(path), rendered_format="markdown",
-        )
+        for artifact in artifacts:
+            content = make_content()
+            path = self.output_dir / f"fake-{artifact.replace('_', '-')}.md"
+            path.write_text("---\ntitle: Fake\n---\n", encoding="utf-8")
+            doc_store.save_document(
+                project_slug=project.slug, doc_type=artifact, title=content.title,
+                content_json=content.model_dump_json(), run_id=run_id,
+                rendered_path=str(path), rendered_format="markdown",
+            )
         run_store.update_run(run_id, status="completed", progress=100, message="Done.")
         return SimpleNamespace(run_id=run_id)
 
@@ -198,6 +200,18 @@ def test_list_runs_and_run_documents(fake_service, existing_project):
     docs = client.get(f"/api/runs/{task_id}/documents").json()
     assert docs[0]["type"] == "blog_post"
     assert docs[0]["download_url"] == "/download/fake-blog-post.md"
+
+
+def test_generate_multiple_artifacts(fake_service, existing_project):
+    task_id = client.post("/api/generate", json={
+        "topic": "AI tools for small business", "project_slug": existing_project.slug,
+        "artifacts": ["blog_post", "linkedin_post", "social_thread"],
+    }).json()["task_id"]
+
+    types = {d["type"] for d in client.get(f"/api/runs/{task_id}/documents").json()}
+    assert {"blog_post", "linkedin_post", "social_thread"} <= types
+    # /api/result still returns the blog post as the primary
+    assert client.get(f"/api/result/{task_id}").json()["download_url"] == "/download/fake-blog-post.md"
 
 
 def test_render_document_endpoint(fake_service, existing_project, monkeypatch, tmp_path):

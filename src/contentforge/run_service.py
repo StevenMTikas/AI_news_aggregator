@@ -15,23 +15,32 @@ from typing import Any, Iterable, Mapping, Optional
 
 from pydantic import BaseModel
 
+from .agents.base import AgentBudget
+from .agents.library import FACT_CHECKER_AGENT, METADATA_AGENT
+from .agent_loop import run_agent
 from .cost import CostLedger
 from .db import briefs as brief_store
 from .db import costs as cost_store
 from .db import documents as doc_store
 from .db import runs as run_store
 from .db import sources as source_store
-from .knowledge import KnowledgeStore, format_priming
+from .knowledge import KnowledgeStore, brief_text, format_priming
+from .pipelines import COMPOSE_PIPELINES
 from .pipelines.base import Document
-from .pipelines.blog_post import BlogPostPipeline
 from .pipelines.research import ResearchPipeline
 from .providers.base import LLMProvider, SearchBudget, SearchProvider
 from .providers.serper import normalize_query
-from .renderers.jekyll import JekyllMarkdownRenderer
-from .schemas import ResearchBrief
+from .renderers import DEFAULT_RENDERERS
+from .schemas import DocumentMetadata, FactCheckReport, ResearchBrief
 
 DEFAULT_SEARCH_BUDGET = 12
 BRIEF_TTL_DAYS = 7
+
+
+def _with_model(agent, model: Optional[str]):
+    from dataclasses import replace
+
+    return replace(agent, model=model) if model else agent
 
 
 @dataclass
@@ -72,7 +81,7 @@ class RunService:
         self.llm = llm
         self.search_provider = search_provider
         self.output_dir = Path(output_dir)
-        self.renderers = dict(renderers or {"blog_post": JekyllMarkdownRenderer()})
+        self.renderers = dict(renderers or DEFAULT_RENDERERS)
         self.knowledge = knowledge or KnowledgeStore()
         self.search_budget_per_run = search_budget_per_run
         self.brief_ttl_days = brief_ttl_days
@@ -110,7 +119,7 @@ class RunService:
             documents: list[tuple[Document, Path]] = []
             doc_ids: list[str] = []
             for i, artifact in enumerate(artifacts):
-                self._progress(run_id, 50 + int(40 * i / len(artifacts)), "running",
+                self._progress(run_id, 45 + int(40 * i / len(artifacts)), "running",
                                f"Composing {artifact}...")
                 pipeline = self._compose_pipeline(artifact, ledger)
                 doc = pipeline.compose(brief, project, brief_id=brief_id)
@@ -118,12 +127,16 @@ class RunService:
                 doc_id = doc_store.save_document(
                     project_slug=slug, doc_type=doc.type, title=doc.title,
                     content_json=doc.content.model_dump_json(), run_id=run_id,
-                    rendered_path=str(path), rendered_format="markdown",
+                    rendered_path=str(path), rendered_format=self.renderers[doc.type].mime,
                     based_on_brief_ids=doc.based_on_brief_ids,
+                    review_status=doc.review_status, review_notes=doc.review_notes,
                 )
                 self.knowledge.index_document(doc_id, slug, doc.content)
                 documents.append((doc, path))
                 doc_ids.append(doc_id)
+
+            self._progress(run_id, 92, "running", "Writing metadata...")
+            self._compose_metadata(brief, project, run_id, slug, doc_ids, ledger)
 
             cost_store.save_ledger(run_id, ledger)
             totals = cost_store.run_totals(run_id)
@@ -185,8 +198,30 @@ class RunService:
         )
 
         self._record_search_cost(ledger)
+        self._factcheck_brief(brief, ledger, getattr(project, "default_model", None))
         brief_id = self._persist_brief(brief, slug, normalized, run_id)
         return brief, brief_id, False
+
+    def _factcheck_brief(self, brief: ResearchBrief, ledger: CostLedger, model: Optional[str]) -> None:
+        """Check each finding against the brief's own sources; annotate credibility, drop
+        findings with no support.
+        """
+        agent = _with_model(FACT_CHECKER_AGENT, model)
+        try:
+            report: FactCheckReport = run_agent(
+                self.llm, agent,
+                "Text to check:\n" + brief_text(brief)
+                + "\n\nResearch it must be faithful to (JSON):\n" + brief.model_dump_json(indent=2),
+                budget=AgentBudget(max_iterations=2, max_tool_calls=0), ledger=ledger,
+            )  # type: ignore[assignment]
+        except Exception:
+            return
+        unsupported = {c.strip().lower() for c in report.unsupported_claims}
+        brief.key_findings = [f for f in brief.key_findings if f.strip().lower() not in unsupported]
+        supported_urls = {v.evidence_url for v in report.verdicts if v.verdict == "supported" and v.evidence_url}
+        for source in brief.sources:
+            if source.url in supported_urls:
+                source.credibility = "supported"
 
     def _apply_strategy(self, project) -> None:
         if hasattr(self.search_provider, "budget"):
@@ -252,14 +287,42 @@ class RunService:
             raise
 
     def _compose_pipeline(self, artifact: str, ledger: CostLedger):
-        if artifact == "blog_post":
-            return BlogPostPipeline(self.llm, ledger=ledger)
-        raise ValueError(f"unknown artifact type: {artifact!r}")
+        cls = COMPOSE_PIPELINES.get(artifact)
+        if cls is None:
+            raise ValueError(f"unknown artifact type: {artifact!r}")
+        return cls(self.llm, ledger=ledger)
+
+    def _compose_metadata(self, brief, project, run_id, slug, doc_ids, ledger) -> Optional[str]:
+        prior = self.knowledge.retrieve(slug, brief.topic, k=5) if slug else []
+        prior_titles = "\n".join(f"- {e.title}" for e in prior if e.kind == "document") or "(none)"
+        try:
+            meta: DocumentMetadata = run_agent(
+                self.llm, _with_model(METADATA_AGENT, getattr(project, "default_model", None)),
+                "Research brief (JSON):\n" + brief.model_dump_json(indent=2)
+                + f"\n\nThis project's prior pieces:\n{prior_titles}",
+                variables={"topic": brief.topic, "audience": getattr(project, "audience", "")},
+                budget=AgentBudget(max_iterations=2, max_tool_calls=0), ledger=ledger,
+            )  # type: ignore[assignment]
+        except Exception:
+            return None
+        return doc_store.save_document(
+            project_slug=slug, doc_type="metadata", title=f"metadata: {brief.topic}",
+            content_json=meta.model_dump_json(), run_id=run_id,
+            based_on_document_ids=doc_ids,
+        )
+
+    _CONTENT_MODELS = {
+        "blog_post": "BlogContent",
+        "linkedin_post": "LinkedInPost",
+        "social_thread": "SocialThread",
+        "repurpose": "RepurposePack",
+        "metadata": "DocumentMetadata",
+    }
 
     def _content_model(self, doc_type: str) -> type[BaseModel]:
-        from .schemas import BlogContent
+        from . import schemas
 
-        return {"blog_post": BlogContent}.get(doc_type) or BlogContent
+        return getattr(schemas, self._CONTENT_MODELS.get(doc_type, "BlogContent"))
 
     def _project_for(self, slug: Optional[str]):
         from .projects import ProjectNotFoundError, get_project

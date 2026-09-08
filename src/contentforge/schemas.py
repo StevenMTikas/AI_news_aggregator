@@ -51,6 +51,24 @@ class LinkedInPost(BaseModel):
     link_placement: LinkPlacement = "first_comment"  # configurable; body-links may be demoted
 
 
+class SocialThread(BaseModel):
+    """A short-form thread (X / Bluesky / Threads). Each post stands on its own."""
+
+    posts: List[str] = []  # 3-8 posts; the first is the hook, the last has the CTA
+    hashtags: List[str] = []
+
+
+class Snippet(BaseModel):
+    platform: str  # "x" | "linkedin" | "instagram" | "newsletter" | ...
+    text: str
+
+
+class RepurposePack(BaseModel):
+    """Platform-tagged one-liners / captions lifted from the research for reuse."""
+
+    snippets: List[Snippet] = []
+
+
 # ------------------------------------------------------------------- keyword report
 
 

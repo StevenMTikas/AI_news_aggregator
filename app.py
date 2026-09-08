@@ -78,6 +78,7 @@ class BlogRequest(BaseModel):
     project_slug: str
     topic_slug: Optional[str] = None
     force_fresh: bool = False
+    artifacts: List[str] = Field(default_factory=lambda: ["blog_post"])
 
 
 class TaskStatus(BaseModel):
@@ -142,14 +143,21 @@ def _download_url(rendered_path: Optional[str]) -> Optional[str]:
     return f"/download/{Path(rendered_path).name}" if rendered_path else None
 
 
+def _primary_doc(run_id: str):
+    docs = [d for d in doc_store.list_documents(run_id=run_id) if d.type != "metadata"]
+    if not docs:
+        return None
+    return next((d for d in docs if d.type == "blog_post"), docs[0])
+
+
 def _task_status(run: Run) -> TaskStatus:
     result = None
     download_url = None
     if run.status in {"completed", "partial"}:
-        docs = doc_store.list_documents(run_id=run.id)
-        if docs:
-            result = json.loads(docs[0].content_json)
-            download_url = _download_url(docs[0].rendered_path)
+        doc = _primary_doc(run.id)
+        if doc is not None:
+            result = json.loads(doc.content_json)
+            download_url = _download_url(doc.rendered_path)
     return TaskStatus(
         task_id=run.id,
         status=run.status,
@@ -161,7 +169,9 @@ def _task_status(run: Run) -> TaskStatus:
     )
 
 
-def run_blog_generation(run_id: str, topic: str, project_slug: str, topic_slug: Optional[str] = None) -> None:
+def run_blog_generation(run_id: str, topic: str, project_slug: str,
+                        topic_slug: Optional[str] = None,
+                        artifacts: Optional[List[str]] = None) -> None:
     try:
         project = get_project(project_slug)
     except ProjectNotFoundError:
@@ -176,6 +186,7 @@ def run_blog_generation(run_id: str, topic: str, project_slug: str, topic_slug: 
         service = default_run_service(output_dir=OUTPUT_DIR)
         service.run_atomic(
             project, topic, run_id=run_id, topic_slug=topic_slug,
+            artifacts=artifacts or ["blog_post"],
             current_date=datetime.now().strftime("%Y-%m-%d"),
         )
     except Exception as exc:
@@ -258,11 +269,12 @@ async def generate_blog(request: BlogRequest, background_tasks: BackgroundTasks)
     except ProjectNotFoundError:
         raise HTTPException(status_code=400, detail=f"Unknown project: {request.project_slug}")
 
+    artifacts = request.artifacts or ["blog_post"]
     run = run_store.create_run(
         project_slug=request.project_slug,
         topic=request.topic,
         topic_slug=request.topic_slug or request.topic,
-        params={"artifacts": ["blog_post"], "force_fresh": request.force_fresh},
+        params={"artifacts": artifacts, "force_fresh": request.force_fresh},
     )
     background_tasks.add_task(
         run_blog_generation,
@@ -270,6 +282,7 @@ async def generate_blog(request: BlogRequest, background_tasks: BackgroundTasks)
         topic=request.topic,
         project_slug=request.project_slug,
         topic_slug=request.topic_slug,
+        artifacts=artifacts,
     )
     return _task_status(run)
 

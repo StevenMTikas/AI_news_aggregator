@@ -2,12 +2,16 @@ from types import SimpleNamespace
 
 import pytest
 
+from src.contentforge.db import connection
 from src.contentforge.providers.base import SearchBudget, SearchResult
 from src.contentforge.providers.fakes import FakeLLMProvider, ScriptedResponse
 from src.contentforge.providers.serper import NullSearchProvider, SerperSearchProvider
 from src.contentforge.run_service import RunService
 from src.contentforge.schemas import (
     BlogContent,
+    CritiqueReport,
+    DocumentMetadata,
+    FactCheckReport,
     KeywordReport,
     ResearchBrief,
     ResearchNotes,
@@ -30,20 +34,32 @@ def project(**kw):
 
 
 def _research_turns():
+    """keyword -> research(tool + notes) -> synthesis -> brief fact-check = 5 turns."""
     return [
         sr(KeywordReport(primary_keywords=["ai reservations"])),
         ScriptedResponse(tool_calls=[("web_search", {"query": "restaurant ai 2026"})]),
         sr(ResearchNotes(findings=["AI cuts no-shows"], sources=[Source(url="https://ex.test/1", takeaway="down 20%")])),
         sr(ResearchBrief(topic="x", summary="s", key_findings=["AI cuts no-shows"], sources=[Source(url="https://ex.test/1", takeaway="down 20%")])),
+        sr(FactCheckReport(overall="pass")),  # brief fact-check
     ]
 
 
 def _blog_turns(title="The Post"):
+    """writer -> fact-check -> critique -> editor -> voice = 5 turns."""
     draft = BlogContent(
         title="draft", meta_description="m", hook="h",
         sections=[Section(heading="A", body="b")], key_points=["k"], tags=["ai"], sources=["https://ex.test/1"],
     )
-    return [sr(draft), sr(draft.model_copy(update={"title": title}))]
+    final = draft.model_copy(update={"title": title})
+    return [sr(draft), sr(FactCheckReport(overall="pass")), sr(CritiqueReport()), sr(final), sr(final)]
+
+
+def _metadata_turn():
+    return [sr(DocumentMetadata(title_options=["A title"], slug="a-title"))]
+
+
+def _atomic_blog(title="The Post"):
+    return _research_turns() + _blog_turns(title) + _metadata_turn()
 
 
 def make_service(tmp_path, llm, search=None, **kw):
@@ -56,7 +72,7 @@ def make_service(tmp_path, llm, search=None, **kw):
 
 
 def test_run_atomic_produces_and_writes_blog_post(tmp_path):
-    llm = FakeLLMProvider(_research_turns() + _blog_turns("Reservations, Reinvented"))
+    llm = FakeLLMProvider(_atomic_blog("Reservations, Reinvented"))
     svc = make_service(tmp_path, llm)
 
     result = svc.run_atomic(project(), "AI for restaurants", current_date="2026-09-07")
@@ -69,21 +85,51 @@ def test_run_atomic_produces_and_writes_blog_post(tmp_path):
     assert "author: Sam Rivera" in md and "categories: [Food, AI]" in md
 
 
+def test_run_atomic_emits_multiple_artifacts_from_one_brief(tmp_path):
+    from src.contentforge.db import documents
+    from src.contentforge.schemas import LinkedInPost, SocialThread
+
+    li = LinkedInPost(hook="hook", body=["one"], hashtags=["#ai"])
+    th = SocialThread(posts=["a", "b", "c"], hashtags=["#ai"])
+    llm = FakeLLMProvider(
+        _research_turns()
+        + _blog_turns("Blog")
+        + [sr(li), sr(FactCheckReport(overall="pass")), sr(CritiqueReport()), sr(li), sr(li)]
+        + [sr(th), sr(th)]
+        + _metadata_turn()
+    )
+    svc = make_service(tmp_path, llm)
+
+    result = svc.run_atomic(
+        project(), "AI for restaurants",
+        artifacts=("blog_post", "linkedin_post", "social_thread"), current_date="2026-09-07",
+    )
+
+    types = {d.type for d in documents.list_documents(run_id=result.run_id)}
+    assert {"blog_post", "linkedin_post", "social_thread", "metadata"} <= types
+    # one research pass feeds all three artifacts (the FakeLLM script has no spare
+    # research turns -- it would raise if an artifact re-triggered research)
+    with connection() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM research_brief").fetchone()[0] == 1
+
+
 def test_second_run_same_topic_reuses_brief(tmp_path):
-    # only two blog turns available for the second run -> if it re-researched, FakeLLM raises
-    llm = FakeLLMProvider(_research_turns() + _blog_turns("First") + _blog_turns("Second"))
+    llm = FakeLLMProvider(
+        _research_turns() + _blog_turns("First") + _metadata_turn()
+        + _blog_turns("Second") + _metadata_turn()  # 2nd run: no research
+    )
     svc = make_service(tmp_path, llm)
 
     r1 = svc.run_atomic(project(), "AI for restaurants", current_date="2026-09-07")
-    r2 = svc.run_atomic(project(), "for  restaurants   AI", current_date="2026-09-08")  # normalises equal
+    r2 = svc.run_atomic(project(), "for  restaurants   AI", current_date="2026-09-08")
 
     assert r2.reused_brief is True
-    assert r1.brief == r2.brief  # same content, reloaded from the DB
+    assert r1.brief == r2.brief
     assert r2.content.title == "Second"
 
 
 def test_force_fresh_bypasses_cache(tmp_path):
-    llm = FakeLLMProvider(_research_turns() + _blog_turns("A") + _research_turns() + _blog_turns("B"))
+    llm = FakeLLMProvider(_atomic_blog("A") + _atomic_blog("B"))
     svc = make_service(tmp_path, llm)
 
     svc.run_atomic(project(), "AI for restaurants", current_date="2026-09-07")
@@ -96,7 +142,7 @@ def test_force_fresh_bypasses_cache(tmp_path):
 def test_search_cost_recorded_from_budget(tmp_path):
     transport = lambda url, payload, headers: {"organic": [{"title": "R", "link": "https://ex.test/1", "snippet": "s"}]}
     serper = SerperSearchProvider("key", budget=SearchBudget(max_calls=5), transport=transport)
-    llm = FakeLLMProvider(_research_turns() + _blog_turns())
+    llm = FakeLLMProvider(_atomic_blog())
     svc = make_service(tmp_path, llm, search=serper)
 
     result = svc.run_atomic(project(), "AI for restaurants", current_date="2026-09-07")
@@ -112,7 +158,7 @@ def test_unknown_artifact_raises(tmp_path):
 
 
 def test_second_topic_is_primed_with_prior_findings(tmp_path):
-    llm = FakeLLMProvider(_research_turns() + _blog_turns("A") + _research_turns() + _blog_turns("B"))
+    llm = FakeLLMProvider(_atomic_blog("A") + _atomic_blog("B"))
     svc = make_service(tmp_path, llm)
     p = project(subject_focus="restaurant technology for independents")
 
@@ -122,14 +168,14 @@ def test_second_topic_is_primed_with_prior_findings(tmp_path):
 
     keyword_task = llm.calls[0].messages[-1]["content"]
     assert "Project focus: restaurant technology" in keyword_task
-    assert "already established" in keyword_task  # prior brief summary is fed in
+    assert "already established" in keyword_task
 
 
 def test_update_brief_supersedes_and_records_a_run(tmp_path):
     from src.contentforge.db import briefs, runs
 
     llm = FakeLLMProvider(
-        _research_turns() + _blog_turns("A")
+        _atomic_blog("A")
         + [ScriptedResponse(tool_calls=[("web_search", {"query": "q"})]),
            sr(ResearchBrief(topic="x", summary="fresher picture", key_findings=["new fact"]))]
     )

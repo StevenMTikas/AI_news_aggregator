@@ -9,6 +9,8 @@ from src.contentforge.providers.fakes import FakeLLMProvider, ScriptedResponse
 from src.contentforge.providers.serper import NullSearchProvider
 from src.contentforge.schemas import (
     BlogContent,
+    CritiqueReport,
+    FactCheckReport,
     KeywordReport,
     ResearchBrief,
     ResearchNotes,
@@ -19,6 +21,27 @@ from src.contentforge.schemas import (
 
 def sr(model) -> ScriptedResponse:
     return ScriptedResponse(content=model.model_dump_json())
+
+
+def _blog(**kw) -> BlogContent:
+    base = dict(
+        title="Draft", meta_description="d", hook="h",
+        sections=[Section(heading="A", body="b")], key_points=["k"], tags=["ai"],
+        sources=["https://ex.test/1"],
+    )
+    base.update(kw)
+    return BlogContent(**base)
+
+
+def blog_compose_turns(final_title="Final, edited") -> list:
+    """writer -> [fact-check, critique, editor, voice] = 5 scripted LLM turns."""
+    return [
+        sr(_blog(title="Draft")),
+        sr(FactCheckReport(overall="pass")),
+        sr(CritiqueReport()),
+        sr(_blog(title="edited")),
+        sr(_blog(title=final_title)),
+    ]
 
 
 def project(**kw):
@@ -78,36 +101,94 @@ def test_research_pipeline_runs_keyword_research_synthesis():
 # ------------------------------------------------------------------ blog post
 
 
-def test_blog_post_pipeline_writes_then_edits():
-    draft = BlogContent(
-        title="Draft", meta_description="d", hook="h",
-        sections=[Section(heading="A", body="b")], key_points=["k"], tags=["ai"], sources=["https://ex.test/1"],
-    )
-    final = draft.model_copy(update={"title": "Final, edited"})
-    llm = FakeLLMProvider([sr(draft), sr(final)])
+def test_blog_post_pipeline_runs_writer_then_review_chain():
+    llm = FakeLLMProvider(blog_compose_turns("Final, edited"))
 
     doc = BlogPostPipeline(llm).compose(BRIEF, project())
 
     assert doc.type == "blog_post"
-    assert doc.content.title == "Final, edited"
-    assert doc.title == "Final, edited"
-    # writer saw the brief; editor saw draft + brief
+    assert doc.content.title == "Final, edited"  # last turn = voice pass output
+    assert doc.review_status == "reviewed"  # fact-check passed
+    assert [c.response_model for c in llm.calls] == [
+        "BlogContent", "FactCheckReport", "CritiqueReport", "BlogContent", "BlogContent",
+    ]
+    # writer saw the brief; fact-checker saw the brief too
     assert "AI cuts no-shows" in llm.calls[0].messages[-1]["content"]
-    assert "Draft" in llm.calls[1].messages[-1]["content"]
+    assert "AI cuts no-shows" in llm.calls[1].messages[-1]["content"]
 
 
 def test_blog_post_pipeline_passes_brief_id_into_provenance():
-    b = BlogContent(title="t", meta_description="m", hook="h", sections=[Section(heading="A", body="b")], key_points=["k"], tags=[], sources=[])
-    llm = FakeLLMProvider([sr(b), sr(b)])
+    llm = FakeLLMProvider(blog_compose_turns())
     doc = BlogPostPipeline(llm).compose(BRIEF, project(), brief_id="brief-7")
     assert doc.based_on_brief_ids == ["brief-7"]
 
 
 def test_blog_post_pipeline_applies_project_model_override():
-    b = BlogContent(title="t", meta_description="m", hook="h", sections=[Section(heading="A", body="b")], key_points=["k"], tags=[], sources=[])
-    llm = FakeLLMProvider([sr(b), sr(b)])
+    llm = FakeLLMProvider(blog_compose_turns())
     BlogPostPipeline(llm).compose(BRIEF, project(default_model="gpt-4o"))
-    assert llm.calls[0].model == "gpt-4o" and llm.calls[1].model == "gpt-4o"
+    assert all(c.model == "gpt-4o" for c in llm.calls)
+
+
+def test_blog_post_flagged_when_factcheck_fails():
+    turns = blog_compose_turns()
+    turns[1] = sr(FactCheckReport(overall="revise", unsupported_claims=["AI cuts no-shows by 99%"]))
+    doc = BlogPostPipeline(FakeLLMProvider(turns)).compose(BRIEF, project())
+    assert doc.review_status == "flagged"
+    assert "unsupported" in doc.review_notes
+
+
+# --------------------------------------------------------- linkedin / thread / repurpose
+
+
+def test_linkedin_pipeline_full_review_off_the_brief():
+    from src.contentforge.pipelines.linkedin import LinkedInPipeline
+    from src.contentforge.schemas import LinkedInPost
+
+    post = LinkedInPost(hook="A real hook.", body=["stanza one", "stanza two"], hashtags=["#ai"],
+                        link_url="https://ex.test/1")
+    llm = FakeLLMProvider([
+        sr(post), sr(FactCheckReport(overall="pass")), sr(CritiqueReport()), sr(post), sr(post),
+    ])
+    doc = LinkedInPipeline(llm).compose(BRIEF, project(), brief_id="b1")
+
+    assert doc.type == "linkedin_post"
+    assert isinstance(doc.content, LinkedInPost)
+    assert doc.content.link_placement == "first_comment"
+    assert [c.response_model for c in llm.calls] == [
+        "LinkedInPost", "FactCheckReport", "CritiqueReport", "LinkedInPost", "LinkedInPost",
+    ]
+
+
+def test_social_thread_pipeline_light_review():
+    from src.contentforge.pipelines.social import SocialThreadPipeline
+    from src.contentforge.schemas import SocialThread
+
+    thread = SocialThread(posts=["hook post", "middle", "cta post"], hashtags=["#ai"])
+    llm = FakeLLMProvider([sr(thread), sr(thread)])  # writer + voice only
+    doc = SocialThreadPipeline(llm).compose(BRIEF, project())
+
+    assert doc.type == "social_thread"
+    assert [c.response_model for c in llm.calls] == ["SocialThread", "SocialThread"]
+    assert doc.title == "hook post"
+
+
+def test_repurpose_pipeline_light_review():
+    from src.contentforge.pipelines.social import RepurposePipeline
+    from src.contentforge.schemas import RepurposePack, Snippet
+
+    pack = RepurposePack(snippets=[Snippet(platform="x", text="one"), Snippet(platform="linkedin", text="two")])
+    llm = FakeLLMProvider([sr(pack), sr(pack)])
+    doc = RepurposePipeline(llm).compose(BRIEF, project())
+    assert doc.type == "repurpose" and "2 repurposed" in doc.title
+
+
+def test_voice_consistency_flags_dropped_source():
+    from src.contentforge.pipelines.review import consistency_check
+
+    before = _blog(sources=["https://a.test", "https://b.test"])
+    after = _blog(sources=["https://a.test"])
+    assert "dropped 1 source" in consistency_check(before, after)
+    assert consistency_check(before, before) == ""
 
 
 # ------------------------------------------------------------------ length

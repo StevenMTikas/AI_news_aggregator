@@ -148,13 +148,20 @@ prompt + output-schema pairs, run by a small tool-calling loop
 | `keyword_agent` | — | `KeywordReport` | Generates the primary/long-tail/trending keyword set for the topic and audience (no search). |
 | `research_agent` | web search | `ResearchNotes` | Searches for current, sourced information tied to the primary keywords. The only agent that spends search credits. |
 | `synthesis_agent` | — | `ResearchBrief` | Distils the notes into a clean, source-backed brief. |
-| `blog_writer_agent` | — | `BlogContent` | Drafts the post from the brief, in the project's tone/audience/voice. |
-| `editor_agent` | — | `BlogContent` | Checks claims against the brief, tightens length and structure, removes jargon. |
+| `blog_writer_agent` / `linkedin_writer_agent` / `social_thread_agent` / `repurpose_agent` | — | `BlogContent` / `LinkedInPost` / `SocialThread` / `RepurposePack` | Per-format writers, each composing directly from the brief. |
+| `fact_checker_agent` | (optional) web search | `FactCheckReport` | Extracts the atomic claims from a brief or draft and checks each against the research; flags what's unsupported. |
+| `audience_critic_agent` | — | `CritiqueReport` | Reads the draft as the target audience; flags what's confusing or unconvincing (never edits). |
+| `editor_agent` | — | same schema | Applies the fact-check and critique notes, enforces the style guide and banned phrases. |
+| `voice_agent` | — | same schema | Sentence-level rewrite to strip AI-tell patterns, constrained to keep every fact and source. |
+| `metadata_agent` | — | `DocumentMetadata` | Title options, meta description, slug, tags, and internal-link suggestions from prior project pieces. |
 | `brief_updater_agent` | web search | `ResearchBrief` | Re-researches a topic against its existing brief — keeps what holds, revises what changed, adds what's new. |
 
-The research pipeline (keyword → research → synthesis) produces a `ResearchBrief`; the blog
-pipeline (writer → editor) composes from it. Audience, tone, author, category tags, and word
-count come from the selected project.
+The research pipeline (keyword → research → synthesis → brief fact-check) produces a
+`ResearchBrief`. Each output artifact then composes from that one brief: blog and LinkedIn
+run the full review chain (fact-check → critique → edit → voice), thread and repurpose run a
+lighter voice-only pass. One atomic run can emit several artifacts (`artifacts` in the
+generate request) plus a metadata document — with no extra research. Audience, tone, style
+guide, and length come from the selected project.
 
 ## 🗂️ Projects
 
@@ -254,11 +261,11 @@ contentforge/
 │   ├── knowledge.py           # per-project hybrid retrieval (FTS5 + embeddings) + priming
 │   ├── projects.py            # ProjectProfile model + SQLite-backed CRUD
 │   ├── schemas.py             # structured-output models (BlogContent, ResearchBrief, ...)
-│   ├── agents/                # Agent definitions (base + library) + tools
-│   ├── pipelines/             # research pipeline + per-format compose recipes
+│   ├── agents/                # Agent definitions (base + library)
+│   ├── pipelines/             # research + blog/linkedin/social recipes + the review chain
 │   ├── providers/             # LLM / embedding / search protocols + OpenAI & Serper impls
-│   ├── renderers/             # JekyllMarkdownRenderer (more formats coming)
-│   └── db/                    # SQLite: migrations, runs, briefs, documents, costs, backup
+│   ├── renderers/             # Jekyll (blog), LinkedIn, thread, repurpose renderers
+│   └── db/                    # SQLite: migrations, runs, briefs, documents, sources, costs, backup
 ├── tests/                     # Pytest test suite
 └── data/                      # git-ignored: app.db, output/, backups/
     ├── app.db

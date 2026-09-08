@@ -1,9 +1,19 @@
-"""Renderers turn a structured document into a publishable artifact.
-
-Phase 4 ships the Jekyll blog renderer; newsletter / podcast / PDF / LinkedIn renderers
-arrive in Phases 7-8.
-"""
+"""Renderers turn a structured document into a publishable artifact."""
 
 from .jekyll import JekyllMarkdownRenderer
+from .social import LinkedInRenderer, RepurposeRenderer, SocialThreadRenderer
 
-__all__ = ["JekyllMarkdownRenderer"]
+DEFAULT_RENDERERS = {
+    "blog_post": JekyllMarkdownRenderer(),
+    "linkedin_post": LinkedInRenderer(),
+    "social_thread": SocialThreadRenderer(),
+    "repurpose": RepurposeRenderer(),
+}
+
+__all__ = [
+    "JekyllMarkdownRenderer",
+    "LinkedInRenderer",
+    "SocialThreadRenderer",
+    "RepurposeRenderer",
+    "DEFAULT_RENDERERS",
+]

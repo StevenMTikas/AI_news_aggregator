@@ -56,14 +56,17 @@ def save_document(
     rendered_format: Optional[str] = None,
     based_on_brief_ids: Optional[list[str]] = None,
     based_on_document_ids: Optional[list[str]] = None,
+    review_status: str = "unreviewed",
+    review_notes: str = "",
 ) -> str:
     doc_id = uuid.uuid4().hex
     with connection() as conn:
         conn.execute(
             """INSERT INTO document
                    (id, run_id, project_slug, type, title, content_json, rendered_path,
-                    rendered_format, based_on_brief_ids, based_on_document_ids, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    rendered_format, based_on_brief_ids, based_on_document_ids,
+                    review_status, review_notes, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 doc_id,
                 run_id,
@@ -75,6 +78,8 @@ def save_document(
                 rendered_format,
                 json.dumps(based_on_brief_ids or []),
                 json.dumps(based_on_document_ids or []),
+                review_status,
+                review_notes,
                 utcnow(),
             ),
         )

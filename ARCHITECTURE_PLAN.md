@@ -381,7 +381,7 @@ Each phase is independently shippable, ends with `pytest` green (network-free) a
 smoke run. Ordered so the risky middle (CrewAI removal, DB) has a correct reference output on
 either side.
 
-**Progress:** Phase 1 ✅ · Phase 2 ✅ · Phase 3 ✅ · Phase 4 ✅ · Phase 5 ✅ · Phase 6 ✅ · Phase 7 → next.
+**Progress:** Phase 1 ✅ · Phase 2 ✅ · Phase 3 ✅ · Phase 4 ✅ · Phase 5 ✅ · Phase 6 ✅ · Phase 7 ✅ · Phase 8 → next.
 
 ### Phase 1 — Correct the current output (reference baseline) · ~45 min · ✅ done
 Minimal slice of the old plan's Phase 1 — only what carries forward:
@@ -514,31 +514,38 @@ Shipped:
   run-1 brief summary ("no-shows ~20%"), and related prior findings. `update_brief`
   supersedes and links. 138 tests pass.
 
-### Phase 7 — Fact-checker, editor, critic, voice, metadata + multi-artifact atomic runs · ~2 days
-- `fact_checker_agent` (with merged claim extraction) on briefs and drafts;
-  `source.credibility` + `document.review_status` / `review_notes` populated.
-- `audience_critic_agent` (standalone) + `voice_agent` (standalone, natural-voice rewrite,
-  §6 #7) + `metadata_agent` wired into the compose flow, in that order, with the post-`voice`
-  claim/source consistency check.
-- `linkedin_post` + `social_thread` + `repurpose` pipelines + agents + renderers — all
-  siblings off the brief; `repurpose` (and `linkedin_post` on request) also accept a `source`
-  Document.
-- **`LinkedInPost` schema** — already built in Phase 3 (`hook`, `body` plain-text stanzas,
-  `cta`, `hashtags`, `link_url`, `link_placement` ∈ {`body`, `first_comment`} default
-  `first_comment`). Phase 7 adds:
-  - `linkedin_writer_agent` — composes narratively from the brief (hook → turn → insight →
-    soft CTA); the blog `pull_quote` / `hook` / `meta_description` fields are useful raw
-    material but not required inputs. 3–5 hashtags enforced by the prompt, not schema
-    validation.
-  - LinkedIn renderer — plain text (no markdown), link rendered inline or as a separate
-    "first comment" block for the operator to paste, per `link_placement`.
-  - `link_placement` default is `first_comment` (the "body links get demoted" belief is
-    widely followed but undocumented) — a recipe/project setting, not hardcoded.
-- Atomic run emits blog + LinkedIn post + thread + snippets + metadata from one brief.
-- Build a small **AI-tell regression fixture**: a few known-slop paragraphs + assertions that
-  `voice_agent` removes the patterns without changing the fact set.
-- **Gate:** one atomic run → all artifacts, all fact-checked and voice-passed, **zero** extra
-  search calls for artifacts 2+; the LinkedIn post reads as narrative, not a blog summary.
+### Phase 7 — Fact-checker, editor, critic, voice, metadata + multi-artifact atomic runs · ~2 days · ✅ done
+Shipped:
+- `agents/library.py`: `FACT_CHECKER_AGENT` (claim extraction merged in), `AUDIENCE_CRITIC_AGENT`,
+  `METADATA_AGENT`, `LINKEDIN_WRITER_AGENT`, `SOCIAL_THREAD_AGENT`, `REPURPOSE_AGENT`, plus
+  `editor_for(schema)` / `voice_for(schema)` builders (the editor and voice passes are
+  format-generic, driven by the output schema + a per-format hint).
+- `pipelines/review.py` — the shared chain: `full_review` = fact-check → critique → edit →
+  voice, then a **non-LLM `consistency_check`** (the voice pass must not drop a source URL or
+  change length > 40%). `light_review` = voice-only. Blog + LinkedIn use `full_review`;
+  thread + repurpose use `light_review`. `document.review_status` / `review_notes` come from
+  here.
+- `pipelines/linkedin.py`, `pipelines/social.py` (thread + repurpose) — sibling recipes off
+  the brief; `linkedin` accepts an optional `source` Document.
+- `renderers/social.py` — `LinkedInRenderer` (plain text, link inline or as a "first comment"
+  block per `link_placement`), `SocialThreadRenderer` (numbered posts), `RepurposeRenderer`
+  (grouped by platform). `renderers.DEFAULT_RENDERERS` maps all four types.
+- `schemas.py`: `SocialThread`, `Snippet`, `RepurposePack` (LinkedInPost was already there).
+- `RunService`: `run_atomic(artifacts=(...))` composes each selected artifact from the one
+  brief and persists it with review status/notes; runs `_factcheck_brief` once on the brief
+  (drops unsupported findings, marks `source.credibility='supported'`); runs `metadata_agent`
+  once per run and stores a `metadata` document. `db/documents.save_document` gains
+  `review_status` / `review_notes`.
+- `app.py`: `/api/generate` takes an `artifacts` list; `_primary_doc` returns the blog (never
+  the metadata row) for `/api/result`.
+- **AI-tell regression fixture** in `test_review.py`: a slop paragraph + a human-voiced
+  rewrite; asserts `consistency_check` passes when the fact set survives and flags a dropped
+  source / a big length change.
+- **Gate met:** one atomic run → blog + LinkedIn + thread + repurpose + metadata, all from
+  one brief, all provenance-linked, all `review_status = reviewed`. The FakeLLM script has no
+  spare research turns, so artifacts 2–4 provably re-trigger nothing. The rendered LinkedIn
+  post reads as narrative (hook → what the tool did → detail → soft CTA), plain text, link in
+  the first comment. 157 tests pass.
 
 ### Phase 8 — Compilation runs (all three long-form formats) · ~2 days
 - `outline_agent`, `longform_writer_agent`; `Newsletter`, `PodcastScript`, `Guide` schemas.
