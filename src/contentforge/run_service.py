@@ -18,6 +18,7 @@ from pydantic import BaseModel
 from .agents.base import AgentBudget
 from .agents.library import FACT_CHECKER_AGENT, METADATA_AGENT
 from .agent_loop import run_agent
+from .corpus import CorpusSelection, resolve_corpus
 from .cost import CostLedger
 from .db import briefs as brief_store
 from .db import costs as cost_store
@@ -27,6 +28,7 @@ from .db import sources as source_store
 from .knowledge import KnowledgeStore, brief_text, format_priming
 from .pipelines import COMPOSE_PIPELINES
 from .pipelines.base import Document
+from .pipelines.compilation import CompilationPipeline
 from .pipelines.research import ResearchPipeline
 from .providers.base import LLMProvider, SearchBudget, SearchProvider
 from .providers.serper import normalize_query
@@ -147,6 +149,64 @@ class RunService:
             )
             return RunResult(brief=brief, documents=documents, cost=ledger,
                              reused_brief=reused, run_id=run_id, document_ids=doc_ids)
+        except Exception as exc:
+            cost_store.save_ledger(run_id, ledger)
+            run_store.update_run(run_id, status="failed", progress=0,
+                                 message=f"Error: {exc}", error=str(exc))
+            raise
+
+    def start_compilation(
+        self,
+        project: Any,
+        longform_type: str,
+        selection: CorpusSelection,
+        *,
+        angle: str = "",
+        current_date: Optional[str] = None,
+        run_id: Optional[str] = None,
+    ) -> RunResult:
+        current_date = current_date or date.today().isoformat()
+        slug = getattr(project, "slug", "")
+        ledger = CostLedger()
+        if run_id is None:
+            run_id = run_store.create_run(
+                project_slug=slug, kind="compilation",
+                topic=f"{longform_type}: {angle or 'compilation'}",
+                params={"longform_type": longform_type, "selection": selection.model_dump(), "angle": angle},
+            ).id
+        try:
+            self._progress(run_id, 10, "running", "Gathering corpus...")
+            corpus = resolve_corpus(slug, selection, angle=angle, knowledge=self.knowledge)
+            if not corpus.items:
+                raise ValueError("no prior content matched the selection")
+
+            self._progress(run_id, 40, "running", f"Composing {longform_type}...")
+            doc = CompilationPipeline(self.llm, ledger=ledger).compose(
+                longform_type=longform_type, corpus=corpus, project=project, angle=angle,
+                model=getattr(project, "default_model", None),
+            )
+            path = self._render_and_write(doc, project, current_date)
+            doc_id = doc_store.save_document(
+                project_slug=slug, doc_type=doc.type, title=doc.title,
+                content_json=doc.content.model_dump_json(), run_id=run_id,
+                rendered_path=str(path), rendered_format=self.renderers[doc.type].mime,
+                based_on_brief_ids=doc.based_on_brief_ids,
+                based_on_document_ids=doc.based_on_document_ids,
+                review_status=doc.review_status, review_notes=doc.review_notes,
+            )
+            self.knowledge.index_document(doc_id, slug, doc.content)
+
+            cost_store.save_ledger(run_id, ledger)
+            totals = cost_store.run_totals(run_id)
+            run_store.update_run(
+                run_id, status="completed", progress=100, message="Done.",
+                cost_usd=totals["usd"], search_calls=totals["search_calls"],
+                tokens_in=totals["tokens_in"], tokens_out=totals["tokens_out"],
+            )
+            return RunResult(
+                brief=corpus.merged_brief(doc.title), documents=[(doc, path)], cost=ledger,
+                run_id=run_id, document_ids=[doc_id],
+            )
         except Exception as exc:
             cost_store.save_ledger(run_id, ledger)
             run_store.update_run(run_id, status="failed", progress=0,
@@ -316,6 +376,9 @@ class RunService:
         "linkedin_post": "LinkedInPost",
         "social_thread": "SocialThread",
         "repurpose": "RepurposePack",
+        "newsletter": "Newsletter",
+        "podcast_script": "PodcastScript",
+        "guide": "Guide",
         "metadata": "DocumentMetadata",
     }
 
@@ -336,7 +399,7 @@ class RunService:
         renderer = self.renderers.get(doc.type)
         if renderer is None:
             raise ValueError(f"no renderer registered for document type {doc.type!r}")
-        artifact = renderer.render(
+        result = renderer.render(
             doc.content,
             context={
                 "author": getattr(project, "author", ""),
@@ -344,10 +407,14 @@ class RunService:
                 "current_date": current_date,
             },
         )
+        artifacts = result if isinstance(result, list) else [result]
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        path = self.output_dir / artifact.filename
-        path.write_bytes(artifact.content)
-        return path
+        primary: Optional[Path] = None
+        for artifact in artifacts:
+            path = self.output_dir / artifact.filename
+            path.write_bytes(artifact.content)
+            primary = primary or path
+        return primary  # type: ignore[return-value]
 
     def _progress(self, run_id: Optional[str], pct: int, status: str, message: str) -> None:
         if run_id:

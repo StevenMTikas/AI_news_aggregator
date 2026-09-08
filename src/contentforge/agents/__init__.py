@@ -16,11 +16,13 @@ from .library import (
     KEYWORD_AGENT,
     LINKEDIN_WRITER_AGENT,
     METADATA_AGENT,
+    OUTLINE_AGENT,
     REPURPOSE_AGENT,
     RESEARCH_AGENT,
     SOCIAL_THREAD_AGENT,
     SYNTHESIS_AGENT,
     editor_for,
+    longform_writer_for,
     voice_for,
 )
 
@@ -32,6 +34,8 @@ __all__ = [
     "search_tool",
     "editor_for",
     "voice_for",
+    "longform_writer_for",
+    "OUTLINE_AGENT",
     "AGENTS",
     "KEYWORD_AGENT",
     "RESEARCH_AGENT",

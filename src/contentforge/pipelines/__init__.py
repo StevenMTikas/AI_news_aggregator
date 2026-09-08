@@ -7,6 +7,7 @@ LinkedIn run the full review chain; thread and repurpose run a light (voice-only
 
 from .base import ComposePipeline, Document, resolve_target_words
 from .blog_post import BlogPostPipeline
+from .compilation import CompilationPipeline
 from .linkedin import LinkedInPipeline
 from .research import ResearchPipeline
 from .social import RepurposePipeline, SocialThreadPipeline
@@ -26,6 +27,7 @@ __all__ = [
     "LinkedInPipeline",
     "SocialThreadPipeline",
     "RepurposePipeline",
+    "CompilationPipeline",
     "ResearchPipeline",
     "COMPOSE_PIPELINES",
 ]

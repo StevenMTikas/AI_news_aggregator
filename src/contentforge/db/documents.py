@@ -93,7 +93,7 @@ def get_document(doc_id: str) -> Optional[StoredDocument]:
 
 
 def list_documents(*, project_slug: Optional[str] = None, run_id: Optional[str] = None,
-                   limit: int = 100) -> list[StoredDocument]:
+                   run_ids: Optional[list[str]] = None, limit: int = 100) -> list[StoredDocument]:
     clauses, params = [], []
     if project_slug:
         clauses.append("project_slug = ?")
@@ -101,6 +101,9 @@ def list_documents(*, project_slug: Optional[str] = None, run_id: Optional[str] 
     if run_id:
         clauses.append("run_id = ?")
         params.append(run_id)
+    if run_ids:
+        clauses.append(f"run_id IN ({', '.join('?' * len(run_ids))})")
+        params.extend(run_ids)
     where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
     params.append(limit)
     with connection() as conn:

@@ -156,12 +156,21 @@ prompt + output-schema pairs, run by a small tool-calling loop
 | `metadata_agent` | — | `DocumentMetadata` | Title options, meta description, slug, tags, and internal-link suggestions from prior project pieces. |
 | `brief_updater_agent` | web search | `ResearchBrief` | Re-researches a topic against its existing brief — keeps what holds, revises what changed, adds what's new. |
 
+| `outline_agent` | — | `Outline` | Plans a long-form piece from a corpus of the project's prior work. |
+| `{newsletter,podcast_script,guide}_writer_agent` | — | `Newsletter` / `PodcastScript` / `Guide` | Writes the long-form piece from the outline + corpus. |
+
 The research pipeline (keyword → research → synthesis → brief fact-check) produces a
 `ResearchBrief`. Each output artifact then composes from that one brief: blog and LinkedIn
 run the full review chain (fact-check → critique → edit → voice), thread and repurpose run a
 lighter voice-only pass. One atomic run can emit several artifacts (`artifacts` in the
-generate request) plus a metadata document — with no extra research. Audience, tone, style
-guide, and length come from the selected project.
+generate request) plus a metadata document — with no extra research.
+
+**Compilations** (`/compile`, `POST /api/compile`) go the other way: pick several prior runs
+(or a recent window) and assemble a **newsletter** (Markdown + HTML), **podcast script**
+(with segment cues), or **guide** (PDF) from that corpus — again with no new research. The
+long-form piece records which briefs and documents it drew on.
+
+Audience, tone, style guide, and length come from the selected project.
 
 ## 🗂️ Projects
 
@@ -262,9 +271,10 @@ contentforge/
 │   ├── projects.py            # ProjectProfile model + SQLite-backed CRUD
 │   ├── schemas.py             # structured-output models (BlogContent, ResearchBrief, ...)
 │   ├── agents/                # Agent definitions (base + library)
-│   ├── pipelines/             # research + blog/linkedin/social recipes + the review chain
+│   ├── pipelines/             # research + blog/linkedin/social/compilation recipes + review chain
 │   ├── providers/             # LLM / embedding / search protocols + OpenAI & Serper impls
-│   ├── renderers/             # Jekyll (blog), LinkedIn, thread, repurpose renderers
+│   ├── renderers/             # Jekyll (blog), LinkedIn, thread, repurpose, newsletter, podcast, guide-PDF
+│   ├── corpus.py              # gather prior runs/briefs/documents for a compilation
 │   └── db/                    # SQLite: migrations, runs, briefs, documents, sources, costs, backup
 ├── tests/                     # Pytest test suite
 └── data/                      # git-ignored: app.db, output/, backups/

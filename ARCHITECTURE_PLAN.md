@@ -22,7 +22,7 @@ document's Phase 1 becomes **Phase 1** here; its Phases 2–5 are absorbed into 
 | **Recipe input shape** | Every recipe is `compose(brief, project, corpus, source: Document \| None) → Document`. `source=None` = sibling take off the research; `source=<Document>` = repurpose an existing artifact. Signature fixed in Phase 4 so it never needs reworking. |
 | **Content length** | A property of the **recipe**, not the project. `target_word_count` leaves `ProjectProfile`; each recipe carries a default, `project.length_overrides` (`{recipe: count}`) tweaks it. |
 | **Output — compilation runs** | Build the framework for all three long-form types and implement all three: **newsletter**, **podcast script** (script text only for now; renderer seam left for audio), **informative guide → PDF**. Chosen from a dropdown, with a control for how much prior content feeds in. |
-| **PDF engine** | **WeasyPrint** (HTML/CSS → PDF). ReportLab noted as fallback if system libs are a problem. |
+| **PDF engine** | Shipped **ReportLab as the working default** (pure Python, no system libs — fits local-first on Windows). `GuidePdfRenderer` uses **WeasyPrint when it's installed** (`pip install -e ".[pdf]"`) for nicer HTML/CSS output. |
 | **Retrieval ("smarter over time")** | **Hybrid retrieval from the start** — SQLite FTS5 (BM25 keyword) + embedding vector search (`text-embedding-3-small`, brute-force cosine over stored vectors), fused. Best long-term recall; the `KnowledgeStore` interface hides it so the impl can evolve (e.g. `sqlite-vec`) without touching callers. |
 | **Primary surface** | Keep the FastAPI web UI as primary; CLI is a first-class equal. UI gets a real rework (§10). |
 | **Agent roster** | Core 11 agents (§6), all built this campaign. `claims_extractor` is **merged into `fact_checker_agent`**. `audience_critic_agent` and `voice_agent` (de-AI / natural-voice rewrite) are their **own standalone agents**, not merged. |
@@ -381,7 +381,7 @@ Each phase is independently shippable, ends with `pytest` green (network-free) a
 smoke run. Ordered so the risky middle (CrewAI removal, DB) has a correct reference output on
 either side.
 
-**Progress:** Phase 1 ✅ · Phase 2 ✅ · Phase 3 ✅ · Phase 4 ✅ · Phase 5 ✅ · Phase 6 ✅ · Phase 7 ✅ · Phase 8 → next.
+**Progress:** Phase 1–8 ✅ · Phase 9 → next.
 
 ### Phase 1 — Correct the current output (reference baseline) · ~45 min · ✅ done
 Minimal slice of the old plan's Phase 1 — only what carries forward:
@@ -547,13 +547,35 @@ Shipped:
   post reads as narrative (hook → what the tool did → detail → soft CTA), plain text, link in
   the first comment. 157 tests pass.
 
-### Phase 8 — Compilation runs (all three long-form formats) · ~2 days
-- `outline_agent`, `longform_writer_agent`; `Newsletter`, `PodcastScript`, `Guide` schemas.
-- Corpus-selection API + UI (dropdown + scope controls, §5 Tier 2).
-- Renderers: newsletter (MD + HTML), podcast script (MD w/ cues), guide (**WeasyPrint PDF**).
-- Provenance: `document.based_on_document_ids` / `based_on_brief_ids`.
-- **Gate:** select 3 prior runs → newsletter citing only those briefs; podcast script renders
-  with cues; PDF guide renders.
+### Phase 8 — Compilation runs (all three long-form formats) · ~2 days · ✅ done
+Shipped:
+- `schemas.py`: `Outline`, `Newsletter`, `PodcastScript`, `Guide` (+ their item types);
+  `LONGFORM_SCHEMAS` registry.
+- `agents/library.py`: `OUTLINE_AGENT`, `longform_writer_for(type)` builder (one prompt per
+  format).
+- `corpus.py` — `CorpusSelection` (explicit `run_ids` / `last_n_runs` / `last_n_days` +
+  optional retrieval), `resolve_corpus()` → a token-budgeted `Corpus` of prior briefs +
+  documents, and `Corpus.merged_brief()` (a synthetic brief spanning the corpus for the
+  review chain to check against). New DB filters: `runs.list_runs(since/kinds/status)`,
+  `documents.list_documents(run_ids)`, `briefs.list_briefs(run_ids)`.
+- `pipelines/compilation.py` — `CompilationPipeline.compose(longform_type, corpus, project,
+  angle)`: outline → write → `full_review` chain. Provenance =
+  `based_on_brief_ids` + `based_on_document_ids` from the corpus.
+- `renderers/longform.py` — `NewsletterRenderer` (returns **MD + HTML**), `PodcastScriptRenderer`
+  (MD with bracketed cues), `GuidePdfRenderer` (**WeasyPrint if installed, else a pure-Python
+  ReportLab fallback** — the deviation from §1: WeasyPrint's system libs don't fit
+  local-first-on-Windows, so ReportLab is the working default and `pip install -e ".[pdf]"`
+  upgrades it). Renderers may now return a list; `_render_and_write` writes all, first is
+  primary.
+- `RunService.start_compilation(project, longform_type, selection, angle)` → a
+  `kind=compilation` run. `app.py`: `POST /api/compile`, `/api/runs?kind=`, `/compile` page
+  (`static/compile.html` + `compile.js` — format dropdown, run picker, last-N fallback).
+  `ResultResponse.content` relaxed to `dict` (long-form isn't `BlogContent`).
+- `utcnow()` now keeps microseconds so same-second rows sort deterministically (fixed
+  `last_n_runs` ordering).
+- **Gate met:** select 3 prior runs → newsletter (MD+HTML) citing exactly those 3 briefs;
+  podcast script renders with `## [SEGMENT n: …]` cues; guide renders as a real `%PDF-`.
+  171 pytest + 10 vitest.
 
 ### Phase 9 — Web UI rework + auth + CLI · ~1.5–2 days
 - API-key dependency; CORS lock; `/api/generate` + `/api/compile` rate limit.

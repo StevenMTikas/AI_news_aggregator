@@ -33,7 +33,7 @@ def save_brief(
     brief_id = uuid.uuid4().hex
     expires_at = None
     if ttl_days:
-        expires_at = (datetime.now(timezone.utc) + timedelta(days=ttl_days)).isoformat(timespec="seconds")
+        expires_at = (datetime.now(timezone.utc) + timedelta(days=ttl_days)).isoformat(timespec="microseconds")
     with connection() as conn:
         conn.execute(
             """INSERT INTO research_brief
@@ -87,6 +87,30 @@ def get_brief(brief_id: str) -> Optional[StoredBrief]:
         expires_at=row["expires_at"],
         project_slug=row["project_slug"],
     )
+
+
+def list_briefs(*, project_slug: Optional[str] = None, run_ids: Optional[list[str]] = None,
+                limit: int = 100) -> list[StoredBrief]:
+    clauses, params = [], []
+    if project_slug:
+        clauses.append("project_slug = ?")
+        params.append(project_slug)
+    if run_ids:
+        clauses.append(f"run_id IN ({', '.join('?' * len(run_ids))})")
+        params.extend(run_ids)
+    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+    params.append(limit)
+    with connection() as conn:
+        rows = conn.execute(
+            f"SELECT * FROM research_brief{where} ORDER BY created_at DESC LIMIT ?", params
+        ).fetchall()
+    return [
+        StoredBrief(
+            id=r["id"], brief=ResearchBrief.model_validate_json(r["content_json"]),
+            created_at=r["created_at"], expires_at=r["expires_at"], project_slug=r["project_slug"],
+        )
+        for r in rows
+    ]
 
 
 def supersede(old_brief_id: str, new_brief_id: str) -> None:

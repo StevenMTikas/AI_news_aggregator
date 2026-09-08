@@ -19,6 +19,7 @@ from ..schemas import (
     FactCheckReport,
     KeywordReport,
     LinkedInPost,
+    Outline,
     RepurposePack,
     ResearchBrief,
     ResearchNotes,
@@ -316,6 +317,76 @@ REPURPOSE_AGENT = Agent(
 )
 
 
+# ----------------------------------------------------------- long form (Tier 2)
+
+
+OUTLINE_AGENT = Agent(
+    name="outline_agent",
+    output_schema=Outline,
+    temperature=0.4,
+    system_prompt=(
+        "You plan a {longform_type} for {audience} from a corpus of this project's prior "
+        "research and pieces.\n\n"
+        "Angle / framing: {angle}\n\n"
+        "Produce an Outline:\n"
+        "- title\n"
+        "- angle: one sentence on what this piece argues or covers\n"
+        "- nodes: the sections in order. For each: a heading, 2-4 bullet points, and "
+        "draws_on = the exact titles of the corpus items that support it.\n\n"
+        "Only include material the corpus actually supports. A {longform_type} is a "
+        "synthesis, not a list of summaries -- find the throughline."
+    ),
+)
+
+
+_LONGFORM_PROMPTS = {
+    "newsletter": (
+        "You write a newsletter issue for {audience} from the outline and corpus provided. "
+        "Return a Newsletter:\n"
+        "- subject: a specific email subject line (no clickbait)\n"
+        "- intro: 2-3 sentences setting up the issue\n"
+        "- items: one per outline node -- heading, a tight body paragraph, and source_url "
+        "(the most relevant URL from the corpus, or null)\n"
+        "- sign_off: one closing line\n"
+        "Every claim traces to the corpus. Style guide: {style_guide}"
+    ),
+    "podcast_script": (
+        "You write a spoken podcast script for {audience} from the outline and corpus. It is "
+        "read aloud -- write for the ear, contractions, short sentences. Return a "
+        "PodcastScript:\n"
+        "- title\n"
+        "- hook: the cold-open line (< 20 words)\n"
+        "- segments: one per outline node -- cue in brackets (e.g. '[SEGMENT 1: bookings]'), "
+        "the spoken script, and a duration_estimate\n"
+        "- outro: the sign-off line\n"
+        "No stage directions beyond the cues. Every claim traces to the corpus. Style guide: "
+        "{style_guide}"
+    ),
+    "guide": (
+        "You write a practical guide for {audience} from the outline and corpus. Return a "
+        "Guide:\n"
+        "- title, subtitle\n"
+        "- introduction: why this matters and who it's for\n"
+        "- sections: one per outline node -- heading, a substantive body, and a one-line "
+        "key_takeaway\n"
+        "- checklist: the concrete actions a reader should take, in order\n"
+        "- sources: every URL cited, from the corpus\n"
+        "Every claim traces to the corpus. Style guide: {style_guide}"
+    ),
+}
+
+
+def longform_writer_for(longform_type: str):
+    from ..schemas import LONGFORM_SCHEMAS
+
+    return Agent(
+        name=f"{longform_type}_writer_agent",
+        output_schema=LONGFORM_SCHEMAS[longform_type],
+        temperature=0.6,
+        system_prompt=_LONGFORM_PROMPTS[longform_type],
+    )
+
+
 # ---------------------------------------------------------------- brief updater
 
 
@@ -345,7 +416,7 @@ AGENTS = {
     for a in (
         KEYWORD_AGENT, RESEARCH_AGENT, SYNTHESIS_AGENT, BLOG_WRITER_AGENT, EDITOR_AGENT,
         FACT_CHECKER_AGENT, AUDIENCE_CRITIC_AGENT, METADATA_AGENT, BRIEF_UPDATER_AGENT,
-        LINKEDIN_WRITER_AGENT, SOCIAL_THREAD_AGENT, REPURPOSE_AGENT,
+        LINKEDIN_WRITER_AGENT, SOCIAL_THREAD_AGENT, REPURPOSE_AGENT, OUTLINE_AGENT,
     )
 }
 
@@ -361,8 +432,10 @@ __all__ = [
     "LINKEDIN_WRITER_AGENT",
     "SOCIAL_THREAD_AGENT",
     "REPURPOSE_AGENT",
+    "OUTLINE_AGENT",
     "BRIEF_UPDATER_AGENT",
     "editor_for",
     "voice_for",
+    "longform_writer_for",
     "AGENTS",
 ]

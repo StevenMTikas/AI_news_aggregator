@@ -9,7 +9,8 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.37.0",
-    "pydantic>=2.0.0"
+    "pydantic>=2.0.0",
+    "reportlab>=4.0"
 ]
 
 [project.optional-dependencies]
@@ -18,6 +19,9 @@ test = [
     "pytest-asyncio>=0.24.0",
     "httpx>=0.27.0"
 ]
+# Nicer PDF output (HTML/CSS -> PDF). Needs system libraries (pango, cairo); the ReportLab
+# fallback works without them. `pip install -e ".[pdf]"`
+pdf = ["weasyprint>=60"]
 
 [project.scripts]
 contentforge = "contentforge.main:run"

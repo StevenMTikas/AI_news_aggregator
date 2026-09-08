@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Compile long-form - ContentForge</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="logo"><h1>Compile long-form</h1></div>
+            <p class="subtitle">Assemble a newsletter, podcast script, or guide from this project's prior work &mdash; no new research</p>
+            <nav class="header-nav"><a href="/">&larr; Generator</a> &middot; <a href="/admin">Manage Projects</a></nav>
+        </header>
+        <main class="main-content">
+            <div class="card" id="formCard">
+                <h2>New compilation</h2>
+                <form id="compileForm">
+                    <div class="form-group">
+                        <label for="project">Project</label>
+                        <select id="project" name="project" required><option value="">Loading&hellip;</option></select>
+                    </div>
+                    <div class="form-group">
+                        <label for="longformType">Format</label>
+                        <select id="longformType" name="longformType" required>
+                            <option value="newsletter">Newsletter (Markdown + HTML)</option>
+                            <option value="podcast_script">Podcast script</option>
+                            <option value="guide">Guide (PDF)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="angle">Angle / framing (optional)</label>
+                        <input type="text" id="angle" name="angle" placeholder="e.g., how independent operators adopt AI without a big budget">
+                    </div>
+                    <div class="form-group">
+                        <label>Source material</label>
+                        <small>Pick specific prior runs, or fall back to a recent window.</small>
+                        <div id="runList" class="run-list"><p class="empty-state">Select a project to load its runs.</p></div>
+                        <div class="scope-fallback">
+                            <label>or use the last
+                                <input type="number" id="lastNRuns" min="1" step="1" style="width:4rem"> runs
+                                / last <input type="number" id="lastNDays" min="1" step="1" style="width:4rem"> days
+                            </label>
+                        </div>
+                        <p class="selection-count" id="selectionCount"></p>
+                    </div>
+                    <button type="submit" class="btn btn-primary" id="compileBtn"><span class="btn-text">Compile</span></button>
+                </form>
+            </div>
+            <div class="card hidden" id="progressCard">
+                <h2>Compiling&hellip;</h2>
+                <div class="progress-container">
+                    <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+                    <div class="progress-text" id="progressText">0%</div>
+                </div>
+                <div class="status-message" id="statusMessage">Gathering corpus&hellip;</div>
+            </div>
+            <div class="card hidden" id="resultsCard">
+                <h2>Done</h2>
+                <p id="resultTitle"></p>
+                <div class="action-buttons">
+                    <button class="btn btn-primary" id="downloadBtn"><span class="btn-text">Download</span></button>
+                    <button class="btn btn-secondary" id="againBtn"><span class="btn-text">Compile another</span></button>
+                </div>
+            </div>
+            <div class="card error-card hidden" id="errorCard">
+                <h2>&#9888; Something went wrong</h2>
+                <div class="error-message" id="errorMessage"></div>
+                <button class="btn btn-secondary" id="retryBtn"><span class="btn-text">Try again</span></button>
+            </div>
+        </main>
+        <footer class="footer"><p>ContentForge</p></footer>
+    </div>
+    <script src="/static/compile.js"></script>
+</body>
+</html>

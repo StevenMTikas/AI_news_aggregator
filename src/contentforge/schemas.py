@@ -69,6 +69,69 @@ class RepurposePack(BaseModel):
     snippets: List[Snippet] = []
 
 
+# ------------------------------------------------------------------- long form
+
+
+class OutlineNode(BaseModel):
+    heading: str
+    points: List[str] = []
+    draws_on: List[str] = []  # titles of the corpus items that feed this section
+
+
+class Outline(BaseModel):
+    title: str
+    angle: str = ""
+    nodes: List[OutlineNode] = []
+
+
+class NewsletterItem(BaseModel):
+    heading: str
+    body: str
+    source_url: Optional[str] = None
+
+
+class Newsletter(BaseModel):
+    subject: str  # email subject line
+    intro: str = ""
+    items: List[NewsletterItem] = []
+    sign_off: str = ""
+
+
+class PodcastSegment(BaseModel):
+    cue: str  # e.g. "[COLD OPEN]", "[SEGMENT 1: reservations]", "[OUTRO]"
+    script: str  # spoken text
+    duration_estimate: str = ""  # "~2 min"
+
+
+class PodcastScript(BaseModel):
+    title: str
+    hook: str = ""  # the cold-open line
+    segments: List[PodcastSegment] = []
+    outro: str = ""
+
+
+class GuideSection(BaseModel):
+    heading: str
+    body: str
+    key_takeaway: str = ""
+
+
+class Guide(BaseModel):
+    title: str
+    subtitle: str = ""
+    introduction: str = ""
+    sections: List[GuideSection] = []
+    checklist: List[str] = []  # actionable steps
+    sources: List[str] = []
+
+
+LONGFORM_SCHEMAS = {
+    "newsletter": Newsletter,
+    "podcast_script": PodcastScript,
+    "guide": Guide,
+}
+
+
 # ------------------------------------------------------------------- keyword report
 
 

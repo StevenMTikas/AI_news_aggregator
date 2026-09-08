@@ -67,16 +67,34 @@ def get_run(run_id: str) -> Optional[Run]:
     return _row_to_run(row) if row else None
 
 
-def list_runs(*, project_slug: Optional[str] = None, limit: int = 50) -> list[Run]:
-    query = "SELECT * FROM run"
+def list_runs(
+    *,
+    project_slug: Optional[str] = None,
+    limit: int = 50,
+    since: Optional[str] = None,
+    kinds: Optional[tuple[str, ...]] = None,
+    status: Optional[str] = None,
+) -> list[Run]:
+    clauses: list[str] = []
     params: list[Any] = []
     if project_slug:
-        query += " WHERE project_slug = ?"
+        clauses.append("project_slug = ?")
         params.append(project_slug)
-    query += " ORDER BY created_at DESC LIMIT ?"
+    if since:
+        clauses.append("created_at >= ?")
+        params.append(since)
+    if kinds:
+        clauses.append(f"kind IN ({', '.join('?' * len(kinds))})")
+        params.extend(kinds)
+    if status:
+        clauses.append("status = ?")
+        params.append(status)
+    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
     params.append(limit)
     with connection() as conn:
-        rows = conn.execute(query, params).fetchall()
+        rows = conn.execute(
+            f"SELECT * FROM run{where} ORDER BY created_at DESC LIMIT ?", params
+        ).fetchall()
     return [_row_to_run(r) for r in rows]
 
 

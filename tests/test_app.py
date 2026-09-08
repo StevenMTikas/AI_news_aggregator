@@ -326,3 +326,41 @@ def test_update_brief_endpoint(monkeypatch, existing_project):
 
 def test_update_brief_endpoint_404():
     assert client.post("/api/briefs/nope/update").status_code == 404
+
+
+# --------------------------------------------------------------------- compile
+
+
+def test_compile_endpoint_queues_a_compilation_run(monkeypatch, existing_project):
+    from src.contentforge.db import runs
+
+    called = {}
+
+    class Svc:
+        def __init__(self, output_dir):
+            pass
+
+        def start_compilation(self, project, longform_type, selection, *, angle, run_id, current_date):
+            called.update(longform_type=longform_type, run_id=run_id, run_ids=selection.run_ids)
+            runs.update_run(run_id, status="completed", progress=100)
+
+    monkeypatch.setattr(app_module, "default_run_service", lambda output_dir: Svc(output_dir))
+
+    r = client.post("/api/compile", json={
+        "project_slug": existing_project.slug, "longform_type": "guide",
+        "angle": "how to start", "run_ids": ["run-a", "run-b"],
+    })
+    assert r.status_code == 200
+    assert called["longform_type"] == "guide" and called["run_ids"] == ["run-a", "run-b"]
+    assert runs.get_run(r.json()["task_id"]).kind == "compilation"
+
+
+def test_compile_endpoint_rejects_unknown_type(existing_project):
+    r = client.post("/api/compile", json={
+        "project_slug": existing_project.slug, "longform_type": "webinar",
+    })
+    assert r.status_code == 400
+
+
+def test_compile_page_served():
+    assert client.get("/compile").status_code == 200

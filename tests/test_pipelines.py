@@ -191,6 +191,56 @@ def test_voice_consistency_flags_dropped_source():
     assert consistency_check(before, before) == ""
 
 
+# ---------------------------------------------------------------- compilation
+
+
+def test_compilation_pipeline_outline_then_write_then_review():
+    from src.contentforge.corpus import Corpus, CorpusItem
+    from src.contentforge.pipelines.compilation import CompilationPipeline
+    from src.contentforge.schemas import (
+        Guide, GuideSection, Outline, OutlineNode,
+    )
+
+    corpus = Corpus(
+        items=[CorpusItem("brief", "b1", "AI reservations", "no-shows down 22%", ["https://ex.test/1"])],
+        brief_ids=["b1"], document_ids=["d1"],
+    )
+    outline = Outline(title="The Restaurant AI Guide", nodes=[OutlineNode(heading="Bookings", points=["p"])])
+    guide = Guide(title="The Restaurant AI Guide", introduction="intro",
+                  sections=[GuideSection(heading="Bookings", body="AI cuts no-shows.", key_takeaway="pilot one tool")],
+                  checklist=["Pick a tool"], sources=["https://ex.test/1"])
+    llm = FakeLLMProvider([
+        sr(outline),                              # outline_agent
+        sr(guide),                                # guide_writer_agent
+        sr(FactCheckReport(overall="pass")),      # review: fact-check
+        sr(CritiqueReport()),                     # review: critique
+        sr(guide),                                # review: editor
+        sr(guide),                                # review: voice
+    ])
+
+    doc = CompilationPipeline(llm).compose(
+        longform_type="guide", corpus=corpus, project=project(), angle="how to start with AI",
+    )
+
+    assert doc.type == "guide"
+    assert doc.content.title == "The Restaurant AI Guide"
+    assert doc.based_on_brief_ids == ["b1"] and doc.based_on_document_ids == ["d1"]
+    assert [c.response_model for c in llm.calls][:2] == ["Outline", "Guide"]
+    # the outline agent saw the corpus
+    assert "no-shows down 22%" in llm.calls[0].messages[-1]["content"]
+
+
+def test_compilation_rejects_unknown_longform_type():
+    import pytest as _pytest
+    from src.contentforge.corpus import Corpus
+    from src.contentforge.pipelines.compilation import CompilationPipeline
+
+    with _pytest.raises(ValueError, match="unknown long-form"):
+        CompilationPipeline(FakeLLMProvider([])).compose(
+            longform_type="webinar", corpus=Corpus([], [], []), project=project(),
+        )
+
+
 # ------------------------------------------------------------------ length
 
 

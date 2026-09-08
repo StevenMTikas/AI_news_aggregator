@@ -22,7 +22,10 @@ from ..providers.base import LLMProvider
 from ..schemas import (
     BlogContent,
     FactCheckReport,
+    Guide,
     LinkedInPost,
+    Newsletter,
+    PodcastScript,
     RepurposePack,
     ResearchBrief,
     SocialThread,
@@ -39,6 +42,9 @@ _FORMAT_HINTS = {
     ),
     "social_thread": "Format: thread. Each post stands alone and is <= 270 characters.",
     "repurpose": "Format: platform snippets. Each is one finished, self-contained idea.",
+    "newsletter": "Format: newsletter. A specific subject line, a short intro, one item per topic, a sign-off.",
+    "podcast_script": "Format: podcast script -- read aloud. Contractions, short sentences, bracketed cues, no prose stage directions.",
+    "guide": "Format: practical guide. Introduction, substantive sections each with a key takeaway, an ordered checklist, sources.",
 }
 
 
@@ -62,14 +68,28 @@ def content_text(content: BaseModel) -> str:
         return "\n".join(content.posts)
     if isinstance(content, RepurposePack):
         return "\n".join(f"[{s.platform}] {s.text}" for s in content.snippets)
+    if isinstance(content, Newsletter):
+        return "\n\n".join([content.subject, content.intro,
+                            *(f"{i.heading}\n{i.body}" for i in content.items), content.sign_off])
+    if isinstance(content, PodcastScript):
+        return "\n\n".join([content.title, content.hook,
+                            *(f"{s.cue}\n{s.script}" for s in content.segments), content.outro])
+    if isinstance(content, Guide):
+        return "\n\n".join([content.title, content.introduction,
+                            *(f"{s.heading}\n{s.body}\n{s.key_takeaway}" for s in content.sections),
+                            *content.checklist])
     return content.model_dump_json()
 
 
 def content_urls(content: BaseModel) -> set[str]:
     if isinstance(content, BlogContent):
         return set(content.sources)
+    if isinstance(content, Guide):
+        return set(content.sources)
     if isinstance(content, LinkedInPost):
         return {content.link_url} if content.link_url else set()
+    if isinstance(content, Newsletter):
+        return {i.source_url for i in content.items if i.source_url}
     return set(_URL.findall(content_text(content)))
 
 

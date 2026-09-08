@@ -147,13 +147,15 @@ class RenderedArtifact:
 
 @runtime_checkable
 class Renderer(Protocol):
-    """Turns a structured document into a publishable artifact. Implementations arrive in
-    Phase 4 (``JekyllMarkdownRenderer``) and Phase 8 (newsletter / podcast / PDF).
+    """Turns a structured document into a publishable artifact -- or a list of them (the
+    newsletter renderer emits Markdown + HTML). The first is treated as primary.
     """
 
     document_type: str
 
-    def render(self, document: BaseModel, *, context: Mapping[str, Any] | None = None) -> RenderedArtifact: ...
+    def render(
+        self, document: BaseModel, *, context: Mapping[str, Any] | None = None
+    ) -> "RenderedArtifact | list[RenderedArtifact]": ...
 
 
 # ---------------------------------------------------------------------------- misc

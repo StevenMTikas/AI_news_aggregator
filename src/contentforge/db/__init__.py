@@ -31,7 +31,8 @@ def set_db_path(path: str | Path) -> None:
 
 
 def utcnow() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    # full precision so rows created in the same second still sort deterministically
+    return datetime.now(timezone.utc).isoformat(timespec="microseconds")
 
 
 @contextmanager

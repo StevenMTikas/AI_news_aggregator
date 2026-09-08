@@ -192,3 +192,53 @@ def test_update_brief_supersedes_and_records_a_run(tmp_path):
     fresh = briefs.find_fresh_brief("acme", "ai reservations")
     assert fresh.id != old_id and "fresher picture" in fresh.brief.summary
     assert any(run.kind == "research" and run.status == "completed" for run in runs.list_runs())
+
+
+# ------------------------------------------------------------------ compilation
+
+
+def test_start_compilation_builds_longform_from_selected_runs(tmp_path):
+    from src.contentforge.corpus import CorpusSelection
+    from src.contentforge.db import documents
+    from src.contentforge.schemas import (
+        Guide, GuideSection, Outline, OutlineNode,
+    )
+
+    # two atomic runs to draw the corpus from
+    llm = FakeLLMProvider(_atomic_blog("Bookings") + _atomic_blog("Inventory"))
+    svc = make_service(tmp_path, llm)
+    p = project()
+    r1 = svc.run_atomic(p, "AI reservations", current_date="2026-09-07")
+    r2 = svc.run_atomic(p, "AI inventory", current_date="2026-09-08")
+
+    outline = Outline(title="Restaurant AI Guide", nodes=[OutlineNode(heading="Ops", points=["p"])])
+    guide = Guide(title="Restaurant AI Guide", introduction="i",
+                  sections=[GuideSection(heading="Ops", body="AI helps ops.", key_takeaway="start small")],
+                  checklist=["Pick one tool"], sources=[])
+    llm.queue(
+        sr(outline), sr(guide), sr(FactCheckReport(overall="pass")), sr(CritiqueReport()),
+        sr(guide), sr(guide),
+    )
+
+    result = svc.start_compilation(
+        p, "guide", CorpusSelection(run_ids=[r1.run_id, r2.run_id], include_retrieval=False),
+        angle="how independents adopt AI", current_date="2026-10-01",
+    )
+
+    assert result.content.title == "Restaurant AI Guide"
+    assert result.primary_path.exists() and result.primary_path.suffix == ".pdf"
+    assert result.primary_path.read_bytes()[:5] == b"%PDF-"
+
+    doc = documents.list_documents(project_slug="acme", limit=1)[0]
+    assert doc.type == "guide"
+    # cites the two selected runs' briefs, no others
+    assert len(doc.based_on_brief_ids) == 2
+
+
+def test_start_compilation_fails_with_empty_corpus(tmp_path):
+    from src.contentforge.corpus import CorpusSelection
+
+    svc = make_service(tmp_path, FakeLLMProvider([]))
+    with pytest.raises(ValueError, match="no prior content"):
+        svc.start_compilation(project(), "newsletter", CorpusSelection(run_ids=["nope"]),
+                              current_date="2026-10-01")

@@ -32,8 +32,9 @@ from src.contentforge.projects import (
     list_projects,
     update_project,
 )
+from src.contentforge.corpus import CorpusSelection
 from src.contentforge.run_service import default_run_service
-from src.contentforge.schemas import BlogContent
+from src.contentforge.schemas import LONGFORM_SCHEMAS
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -130,9 +131,18 @@ class ProjectUpdateRequest(ProjectFields):
     pass
 
 
+class CompileRequest(BaseModel):
+    project_slug: str
+    longform_type: str  # newsletter | podcast_script | guide
+    angle: str = ""
+    run_ids: List[str] = Field(default_factory=list)
+    last_n_runs: Optional[int] = None
+    last_n_days: Optional[int] = None
+
+
 class ResultResponse(BaseModel):
     task_id: str
-    content: Optional[BlogContent] = None
+    content: Optional[dict] = None
     download_url: Optional[str] = None
 
 
@@ -217,6 +227,11 @@ async def read_admin():
     return serve_static_page("admin.html", "<h1>Admin</h1><p>admin.html not found.</p>")
 
 
+@app.get("/compile", response_class=HTMLResponse)
+async def read_compile():
+    return serve_static_page("compile.html", "<h1>Compile</h1><p>compile.html not found.</p>")
+
+
 # --------------------------------------------------------------------- projects
 
 
@@ -287,6 +302,54 @@ async def generate_blog(request: BlogRequest, background_tasks: BackgroundTasks)
     return _task_status(run)
 
 
+def _run_compilation(run_id: str, project_slug: str, longform_type: str,
+                     selection: dict, angle: str) -> None:
+    try:
+        project = get_project(project_slug)
+    except ProjectNotFoundError:
+        run_store.update_run(run_id, status="failed", progress=0,
+                             message=f"Unknown project: {project_slug}", error="project not found")
+        return
+    if not os.getenv("OPENAI_API_KEY"):
+        run_store.update_run(run_id, status="failed", progress=0,
+                             message="OPENAI_API_KEY must be set", error="missing api key")
+        return
+    try:
+        default_run_service(output_dir=OUTPUT_DIR).start_compilation(
+            project, longform_type, CorpusSelection(**selection), angle=angle, run_id=run_id,
+            current_date=datetime.now().strftime("%Y-%m-%d"),
+        )
+    except Exception as exc:
+        logger.error("Compilation failed for run %s: %s", run_id, exc)
+        run = run_store.get_run(run_id)
+        if run is not None and run.status not in {"completed", "failed", "partial"}:
+            run_store.update_run(run_id, status="failed", progress=0,
+                                 message=f"Error: {exc}", error=str(exc))
+
+
+@app.post("/api/compile", response_model=TaskStatus)
+async def compile_longform(request: CompileRequest, background_tasks: BackgroundTasks):
+    if request.longform_type not in LONGFORM_SCHEMAS:
+        raise HTTPException(status_code=400,
+                            detail=f"longform_type must be one of {sorted(LONGFORM_SCHEMAS)}")
+    try:
+        get_project(request.project_slug)
+    except ProjectNotFoundError:
+        raise HTTPException(status_code=400, detail=f"Unknown project: {request.project_slug}")
+
+    selection = {"run_ids": request.run_ids, "last_n_runs": request.last_n_runs,
+                 "last_n_days": request.last_n_days}
+    run = run_store.create_run(
+        project_slug=request.project_slug, kind="compilation",
+        topic=f"{request.longform_type}: {request.angle or 'compilation'}",
+        params={"longform_type": request.longform_type, "selection": selection, "angle": request.angle},
+    )
+    background_tasks.add_task(
+        _run_compilation, run.id, request.project_slug, request.longform_type, selection, request.angle,
+    )
+    return _task_status(run)
+
+
 @app.get("/api/status/{task_id}", response_model=TaskStatus)
 async def get_status(task_id: str):
     run = run_store.get_run(task_id)
@@ -328,8 +391,13 @@ async def stream_status(task_id: str):
 
 
 @app.get("/api/runs", response_model=List[RunSummary])
-async def list_runs_route(project_slug: Optional[str] = None, limit: int = 50):
-    return [RunSummary(**r.model_dump()) for r in run_store.list_runs(project_slug=project_slug, limit=limit)]
+async def list_runs_route(project_slug: Optional[str] = None, limit: int = 50,
+                          kind: Optional[str] = None):
+    kinds = (kind,) if kind else None
+    return [
+        RunSummary(**r.model_dump())
+        for r in run_store.list_runs(project_slug=project_slug, limit=limit, kinds=kinds)
+    ]
 
 
 @app.get("/api/runs/{run_id}/documents")

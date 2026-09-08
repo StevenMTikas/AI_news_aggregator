@@ -107,3 +107,51 @@ def test_repurpose_renderer_groups_by_platform():
                                 Snippet(platform="linkedin", text="three")]),
     ).text
     assert "## x" in text and "## linkedin" in text and "- one" in text
+
+
+# --------------------------------------------------------------------- long form
+
+
+def test_newsletter_renderer_emits_markdown_and_html():
+    from src.contentforge.renderers.longform import NewsletterRenderer
+    from src.contentforge.schemas import Newsletter, NewsletterItem
+
+    arts = NewsletterRenderer().render(
+        Newsletter(subject="This week in restaurant AI", intro="Three things.",
+                   items=[NewsletterItem(heading="Bookings", body="No-shows fell 22%.", source_url="https://ex.test/1")],
+                   sign_off="Until next week."),
+        context=CTX,
+    )
+    assert [a.mime for a in arts] == ["text/markdown", "text/html"]
+    md, page = arts[0].text, arts[1].text
+    assert md.startswith("# This week in restaurant AI") and "[Source](https://ex.test/1)" in md
+    assert "<h1>This week in restaurant AI</h1>" in page and "<a href=" in page
+    assert arts[0].filename.endswith("-newsletter.md") and arts[1].filename.endswith("-newsletter.html")
+
+
+def test_podcast_renderer_has_cues():
+    from src.contentforge.renderers.longform import PodcastScriptRenderer
+    from src.contentforge.schemas import PodcastScript, PodcastSegment
+
+    text = PodcastScriptRenderer().render(
+        PodcastScript(title="Kitchen AI", hook="Your Friday rush, handled.",
+                      segments=[PodcastSegment(cue="SEGMENT 1: bookings", script="AI predicts no-shows.", duration_estimate="~2 min")],
+                      outro="Thanks for listening."),
+        context=CTX,
+    ).text
+    assert "Cold open:" in text and "## [SEGMENT 1: bookings]" in text and "~2 min" in text and "[OUTRO]" in text
+
+
+def test_guide_renderer_produces_a_pdf():
+    from src.contentforge.renderers.longform import GuidePdfRenderer
+    from src.contentforge.schemas import Guide, GuideSection
+
+    art = GuidePdfRenderer().render(
+        Guide(title="The Smart Kitchen Guide", subtitle="For independents", introduction="Why AI now.",
+              sections=[GuideSection(heading="Bookings", body="AI cuts no-shows.", key_takeaway="Pilot one tool.")],
+              checklist=["Pick a tool", "Run a 30-day trial"], sources=["https://ex.test/1"]),
+        context=CTX,
+    )
+    assert art.mime == "application/pdf"
+    assert art.content[:5] == b"%PDF-" and len(art.content) > 800
+    assert art.filename == "2026-08-06-the-smart-kitchen-guide-guide.pdf"
