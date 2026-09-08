@@ -36,6 +36,8 @@ class ProjectProfile(BaseModel):
     exclude_domains: List[str] = Field(default_factory=list)
     default_model: Optional[str] = None
     length_overrides: Dict[str, int] = Field(default_factory=dict)  # {recipe: word_count}
+    max_usd_per_run: Optional[float] = None  # spend cap; None = env default
+    max_search_calls: Optional[int] = None
 
 
 class ProjectNotFoundError(KeyError):
@@ -54,6 +56,7 @@ def slugify(name: str) -> str:
 _ENRICH_COLUMNS = (
     "subject_focus", "style_guide", "banned_phrases", "recency_days", "min_sources",
     "prefer_domains", "exclude_domains", "default_model", "length_overrides",
+    "max_usd_per_run", "max_search_calls",
 )
 _JSON_COLUMNS = {"category_tags", "banned_phrases", "prefer_domains", "exclude_domains", "length_overrides"}
 

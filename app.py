@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from dotenv import load_dotenv
-from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -35,6 +35,12 @@ from src.contentforge.projects import (
 from src.contentforge.corpus import CorpusSelection
 from src.contentforge.run_service import default_run_service
 from src.contentforge.schemas import LONGFORM_SCHEMAS
+from src.contentforge.security import (
+    api_key_configured,
+    cors_origins,
+    generation_limiter,
+    require_api_key,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -49,6 +55,8 @@ if missing_vars:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     init_db()
+    if api_key_configured():
+        logger.info("API-key auth is ON for mutating routes")
     yield
 
 
@@ -60,11 +68,14 @@ app = FastAPI(
 )
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # locked down in Phase 9
+    allow_origins=cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# guards every mutating / generating route; a no-op until CONTENTFORGE_API_KEY is set
+protected = Depends(require_api_key)
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -232,6 +243,11 @@ async def read_compile():
     return serve_static_page("compile.html", "<h1>Compile</h1><p>compile.html not found.</p>")
 
 
+@app.get("/runs", response_class=HTMLResponse)
+async def read_runs():
+    return serve_static_page("runs.html", "<h1>Runs</h1><p>runs.html not found.</p>")
+
+
 # --------------------------------------------------------------------- projects
 
 
@@ -248,7 +264,7 @@ async def get_project_route(slug: str):
         raise HTTPException(status_code=404, detail="Project not found")
 
 
-@app.post("/api/projects", response_model=ProjectProfile, status_code=201)
+@app.post("/api/projects", response_model=ProjectProfile, status_code=201, dependencies=[protected])
 async def create_project_route(body: ProjectCreateRequest):
     try:
         return create_project(ProjectProfile(**body.model_dump()))
@@ -256,7 +272,7 @@ async def create_project_route(body: ProjectCreateRequest):
         raise HTTPException(status_code=409, detail=f"Project '{body.slug}' already exists")
 
 
-@app.put("/api/projects/{slug}", response_model=ProjectProfile)
+@app.put("/api/projects/{slug}", response_model=ProjectProfile, dependencies=[protected])
 async def update_project_route(slug: str, body: ProjectUpdateRequest):
     try:
         return update_project(slug, ProjectProfile(slug=slug, **body.model_dump()))
@@ -264,7 +280,7 @@ async def update_project_route(slug: str, body: ProjectUpdateRequest):
         raise HTTPException(status_code=404, detail="Project not found")
 
 
-@app.delete("/api/projects/{slug}", status_code=204)
+@app.delete("/api/projects/{slug}", status_code=204, dependencies=[protected])
 async def delete_project_route(slug: str):
     try:
         delete_project(slug)
@@ -275,8 +291,9 @@ async def delete_project_route(slug: str):
 # --------------------------------------------------------------------- generation
 
 
-@app.post("/api/generate", response_model=TaskStatus)
+@app.post("/api/generate", response_model=TaskStatus, dependencies=[protected])
 async def generate_blog(request: BlogRequest, background_tasks: BackgroundTasks):
+    generation_limiter.check()
     if not request.topic or len(request.topic.strip()) < 3:
         raise HTTPException(status_code=400, detail="Topic must be at least 3 characters")
     try:
@@ -327,8 +344,9 @@ def _run_compilation(run_id: str, project_slug: str, longform_type: str,
                                  message=f"Error: {exc}", error=str(exc))
 
 
-@app.post("/api/compile", response_model=TaskStatus)
+@app.post("/api/compile", response_model=TaskStatus, dependencies=[protected])
 async def compile_longform(request: CompileRequest, background_tasks: BackgroundTasks):
+    generation_limiter.check()
     if request.longform_type not in LONGFORM_SCHEMAS:
         raise HTTPException(status_code=400,
                             detail=f"longform_type must be one of {sorted(LONGFORM_SCHEMAS)}")
@@ -390,6 +408,21 @@ async def stream_status(task_id: str):
 # --------------------------------------------------------------------- run history
 
 
+@app.get("/api/briefs/fresh")
+async def fresh_brief_route(project_slug: str, topic: str):
+    from src.contentforge.providers.serper import normalize_query
+
+    hit = brief_store.find_fresh_brief(project_slug, normalize_query(topic))
+    return {"fresh": hit is not None, "created_at": hit.created_at if hit else None}
+
+
+@app.get("/api/costs")
+async def costs_route(project_slug: str):
+    from src.contentforge.db import costs as cost_store
+
+    return cost_store.project_totals(project_slug)
+
+
 @app.get("/api/runs", response_model=List[RunSummary])
 async def list_runs_route(project_slug: Optional[str] = None, limit: int = 50,
                           kind: Optional[str] = None):
@@ -411,7 +444,7 @@ async def run_documents_route(run_id: str):
     ]
 
 
-@app.post("/api/documents/{document_id}/render")
+@app.post("/api/documents/{document_id}/render", dependencies=[protected])
 async def render_document_route(document_id: str):
     try:
         service = default_run_service(output_dir=OUTPUT_DIR)
@@ -432,7 +465,7 @@ def _update_brief_task(brief_id: str, project_slug: str) -> None:
         logger.error("Brief update failed for %s: %s", brief_id, exc)
 
 
-@app.post("/api/briefs/{brief_id}/update")
+@app.post("/api/briefs/{brief_id}/update", dependencies=[protected])
 async def update_brief_route(brief_id: str, background_tasks: BackgroundTasks):
     stored = brief_store.get_brief(brief_id)
     if stored is None:

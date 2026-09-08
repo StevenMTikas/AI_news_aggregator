@@ -1,18 +1,15 @@
-# Environment Variables Template
-# Copy this file to .env and fill in your actual API keys
+# Copy this file to .env and fill in your keys.
 
-# OpenAI API Configuration
-# Get your API key from: https://platform.openai.com/api-keys
-OPENAI_API_KEY=your_openai_api_key_here
+# Required
+OPENAI_API_KEY=your_openai_api_key_here      # https://platform.openai.com/api-keys
+SERPER_API_KEY=your_serper_api_key_here      # https://serper.dev/api-key
 
-# Serper API Configuration (for Google search capabilities)
-# Get your API key from: https://serper.dev/api-key
-SERPER_API_KEY=your_serper_api_key_here
-
-# Optional: OpenAI Model Configuration
-# Default is gpt-4o-mini as specified in agents.yaml
-# OPENAI_MODEL_NAME=gpt-4o-mini
-
-# Optional: Application Configuration
-# PORT=8000
-
+# Optional
+# CONTENTFORGE_API_KEY=                       # set to lock the mutating/generating API routes
+#                                             # (sent as an X-API-Key header). Unset = open (local dev).
+# CONTENTFORGE_CORS_ORIGINS=http://localhost:8000,http://127.0.0.1:8000
+# CONTENTFORGE_RATE_LIMIT_PER_MIN=10          # /api/generate + /api/compile; 0 disables
+# CONTENTFORGE_MAX_USD_PER_RUN=               # spend cap per run (dollars); run finishes "partial" if hit
+# CONTENTFORGE_MAX_SEARCH_CALLS=12            # Serper calls per run
+# CONTENTFORGE_DB=                            # path to the SQLite file (default: data/app.db)
+# OPENAI_MODEL_NAME=                          # default model; also set per-project in /admin

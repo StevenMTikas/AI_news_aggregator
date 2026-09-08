@@ -131,7 +131,14 @@ CREATE VIRTUAL TABLE brief_fts USING fts5(ref_id UNINDEXED, project_slug UNINDEX
 CREATE VIRTUAL TABLE doc_fts   USING fts5(ref_id UNINDEXED, project_slug UNINDEXED, body);
 """
 
+M003_BUDGET = """
+-- Per-project spend caps (Phase 9). NULL = fall back to the env default.
+ALTER TABLE project ADD COLUMN max_usd_per_run   REAL;
+ALTER TABLE project ADD COLUMN max_search_calls  INTEGER;
+"""
+
 MIGRATIONS: list[tuple[int, str]] = [
     (1, M001_INITIAL),
     (2, M002_ENRICH),
+    (3, M003_BUDGET),
 ]

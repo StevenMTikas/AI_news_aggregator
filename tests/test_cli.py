@@ -74,3 +74,60 @@ def test_run_pipeline_failure_raises_runtime_error_with_friendly_output(
     captured = capsys.readouterr()
     assert "ERROR" in captured.out
     assert "boom" in captured.out
+
+
+# --------------------------------------------------------------------- typer app
+
+
+from typer.testing import CliRunner  # noqa: E402
+
+from src.contentforge.cli import app  # noqa: E402
+
+runner = CliRunner()
+
+
+def test_cli_project_lifecycle():
+    assert "No projects yet" in runner.invoke(app, ["project", "list"]).output
+
+    r = runner.invoke(app, ["project", "add", "acme", "--name", "Acme", "--audience", "devs",
+                            "--tone", "warm", "--author", "Sam"])
+    assert r.exit_code == 0 and "created" in r.output
+
+    assert "acme" in runner.invoke(app, ["project", "list"]).output
+    assert '"slug": "acme"' in runner.invoke(app, ["project", "show", "acme"]).output
+
+    r = runner.invoke(app, ["project", "rm", "acme", "--yes"])
+    assert r.exit_code == 0 and "deleted" in r.output
+
+
+def test_cli_generate_uses_run_service(monkeypatch, tmp_path):
+    from src.contentforge import cli as cli_mod
+    from src.contentforge.pipelines.base import Document
+    from src.contentforge.run_service import RunResult
+    from src.contentforge.schemas import BlogContent, Section
+
+    runner.invoke(app, ["project", "add", "acme", "--name", "Acme", "--audience", "d",
+                        "--tone", "t", "--author", "S"])
+    captured = {}
+
+    class Svc:
+        def run_atomic(self, project, topic, *, artifacts, force_fresh):
+            captured.update(topic=topic, artifacts=artifacts, fresh=force_fresh)
+            content = BlogContent(title="T", meta_description="m", hook="h",
+                                  sections=[Section(heading="A", body="b")], key_points=["k"],
+                                  tags=[], sources=[])
+            return RunResult(brief=None, documents=[(Document(type="blog_post", content=content), tmp_path / "x.md")],
+                             document_ids=["d1"])
+
+    monkeypatch.setattr(cli_mod, "default_run_service", lambda output_dir: Svc())
+    r = runner.invoke(app, ["generate", "acme", "AI for teams", "-a", "blog_post", "-a", "linkedin_post", "--fresh"])
+    assert r.exit_code == 0
+    assert captured == {"topic": "AI for teams", "artifacts": ["blog_post", "linkedin_post"], "fresh": True}
+
+
+def test_cli_backup(tmp_path, monkeypatch):
+    from src.contentforge import db
+
+    r = runner.invoke(app, ["backup"])
+    assert r.exit_code == 0 and "backup written" in r.output
+    assert (db.db_path().parent / "backups").exists()

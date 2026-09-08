@@ -6,11 +6,13 @@ promised but not built.
 
 > Items 1–8 below are all scheduled to be resolved by the rewrite in
 > [ARCHITECTURE_PLAN.md](ARCHITECTURE_PLAN.md) — see its §13 mapping. This file will be
-> pruned as those phases land. **Phases 1–6 done:** CrewAI removed; #1 resolved;
-> #4 resolved (the `run` table replaces the in-memory task dict; Cloud Run's `--max-instances 1`
-> pin is no longer a correctness requirement); #5 done (SQLite cross-run search cache);
-> #6 resolved (`project.default_model` is stored, editable via `/admin`, and applied to every
-> agent in the run). #2 and #3 (API rate limiting, CORS lock) land in Phase 9.
+> pruned as those phases land. **Phases 1–9 done — all eight items are now resolved:**
+> #1 (CLI scaffolding removed; `contentforge` is a real `typer` CLI), #2 (rate limiter on
+> `/api/generate` + `/api/compile`), #3 (CORS locked to configurable origins), #4 (`run`
+> table replaces the in-memory dict), #5 (SQLite cross-run search cache), #6
+> (`project.default_model` + `max_usd_per_run` / `max_search_calls`), #7 & #8 (`contentforge
+> project ...` / `generate` / `compile` / `runs` / `brief` subcommands). This file can be
+> retired; Phase 10 folds anything remaining into the plan.
 
 ## 1. ~~`train` / `replay` / `test` CLI commands~~ — resolved (Phase 2)
 

@@ -19,7 +19,7 @@ from .agents.base import AgentBudget
 from .agents.library import FACT_CHECKER_AGENT, METADATA_AGENT
 from .agent_loop import run_agent
 from .corpus import CorpusSelection, resolve_corpus
-from .cost import CostLedger
+from .cost import BudgetExceeded, CostLedger
 from .db import briefs as brief_store
 from .db import costs as cost_store
 from .db import documents as doc_store
@@ -79,6 +79,7 @@ class RunService:
         knowledge: Optional[KnowledgeStore] = None,
         search_budget_per_run: int = DEFAULT_SEARCH_BUDGET,
         brief_ttl_days: Optional[int] = BRIEF_TTL_DAYS,
+        max_usd_per_run: Optional[float] = None,
     ) -> None:
         self.llm = llm
         self.search_provider = search_provider
@@ -87,6 +88,17 @@ class RunService:
         self.knowledge = knowledge or KnowledgeStore()
         self.search_budget_per_run = search_budget_per_run
         self.brief_ttl_days = brief_ttl_days
+        self.max_usd_per_run = max_usd_per_run
+
+    def _run_caps(self, project: Any) -> tuple[int, Optional[float]]:
+        searches = getattr(project, "max_search_calls", None) or self.search_budget_per_run
+        usd = getattr(project, "max_usd_per_run", None) or self.max_usd_per_run
+        return min(searches, self.search_budget_per_run), usd
+
+    @staticmethod
+    def _check_budget(ledger: CostLedger, max_usd: Optional[float], step: str) -> None:
+        if max_usd is not None and ledger.usd > max_usd:
+            raise BudgetExceeded(f"spend cap ${max_usd:.2f} reached during {step} (${ledger.usd:.2f})")
 
     # -- public ----------------------------------------------------------------
 
@@ -105,6 +117,7 @@ class RunService:
         current_date = current_date or date.today().isoformat()
         slug = getattr(project, "slug", "")
         ledger = CostLedger()
+        max_searches, max_usd = self._run_caps(project)
 
         if run_id is None:
             run_id = run_store.create_run(
@@ -112,14 +125,16 @@ class RunService:
                 params={"artifacts": artifacts, "force_fresh": force_fresh},
             ).id
 
+        documents: list[tuple[Document, Path]] = []
+        doc_ids: list[str] = []
+        brief: ResearchBrief = ResearchBrief(topic=topic)
         try:
             self._progress(run_id, 5, "running", "Resolving research...")
             brief, brief_id, reused = self._resolve_brief(
-                project, topic, int(current_date[:4]), ledger, force_fresh, run_id
+                project, topic, int(current_date[:4]), ledger, force_fresh, run_id, max_searches
             )
+            self._check_budget(ledger, max_usd, "research")
 
-            documents: list[tuple[Document, Path]] = []
-            doc_ids: list[str] = []
             for i, artifact in enumerate(artifacts):
                 self._progress(run_id, 45 + int(40 * i / len(artifacts)), "running",
                                f"Composing {artifact}...")
@@ -136,24 +151,32 @@ class RunService:
                 self.knowledge.index_document(doc_id, slug, doc.content)
                 documents.append((doc, path))
                 doc_ids.append(doc_id)
+                self._check_budget(ledger, max_usd, f"composing {artifact}")
 
             self._progress(run_id, 92, "running", "Writing metadata...")
             self._compose_metadata(brief, project, run_id, slug, doc_ids, ledger)
 
-            cost_store.save_ledger(run_id, ledger)
-            totals = cost_store.run_totals(run_id)
-            run_store.update_run(
-                run_id, status="completed", progress=100, message="Done.",
-                cost_usd=totals["usd"], search_calls=totals["search_calls"],
-                tokens_in=totals["tokens_in"], tokens_out=totals["tokens_out"],
-            )
+            self._finalize(run_id, ledger, "completed", "Done.")
             return RunResult(brief=brief, documents=documents, cost=ledger,
                              reused_brief=reused, run_id=run_id, document_ids=doc_ids)
+        except BudgetExceeded as exc:
+            self._finalize(run_id, ledger, "partial", str(exc))
+            return RunResult(brief=brief, documents=documents, cost=ledger, reused_brief=False,
+                             run_id=run_id, document_ids=doc_ids)
         except Exception as exc:
             cost_store.save_ledger(run_id, ledger)
             run_store.update_run(run_id, status="failed", progress=0,
                                  message=f"Error: {exc}", error=str(exc))
             raise
+
+    def _finalize(self, run_id: str, ledger: CostLedger, status: str, message: str) -> None:
+        cost_store.save_ledger(run_id, ledger)
+        totals = cost_store.run_totals(run_id)
+        run_store.update_run(
+            run_id, status=status, progress=100 if status == "completed" else 90, message=message,
+            cost_usd=totals["usd"], search_calls=totals["search_calls"],
+            tokens_in=totals["tokens_in"], tokens_out=totals["tokens_out"],
+        )
 
     def start_compilation(
         self,
@@ -196,12 +219,12 @@ class RunService:
             )
             self.knowledge.index_document(doc_id, slug, doc.content)
 
-            cost_store.save_ledger(run_id, ledger)
-            totals = cost_store.run_totals(run_id)
-            run_store.update_run(
-                run_id, status="completed", progress=100, message="Done.",
-                cost_usd=totals["usd"], search_calls=totals["search_calls"],
-                tokens_in=totals["tokens_in"], tokens_out=totals["tokens_out"],
+            _, max_usd = self._run_caps(project)
+            over = max_usd is not None and ledger.usd > max_usd
+            self._finalize(
+                run_id, ledger,
+                "partial" if over else "completed",
+                f"spend cap ${max_usd:.2f} exceeded (${ledger.usd:.2f})" if over else "Done.",
             )
             return RunResult(
                 brief=corpus.merged_brief(doc.title), documents=[(doc, path)], cost=ledger,
@@ -230,7 +253,7 @@ class RunService:
 
     # -- internals -----------------------------------------------------------------
 
-    def _resolve_brief(self, project, topic, year, ledger, force_fresh, run_id):
+    def _resolve_brief(self, project, topic, year, ledger, force_fresh, run_id, max_searches=None):
         slug = getattr(project, "slug", "")
         normalized = normalize_query(topic)
         if not force_fresh:
@@ -238,7 +261,8 @@ class RunService:
             if hit is not None:
                 return hit.brief, hit.id, True
 
-        self._apply_strategy(project)
+        max_searches = max_searches or self.search_budget_per_run
+        self._apply_strategy(project, max_searches)
         priming = format_priming(
             getattr(project, "subject_focus", "") or "",
             self.knowledge.recent_brief_summaries(slug) if slug else [],
@@ -254,7 +278,7 @@ class RunService:
             min_sources=getattr(project, "min_sources", 5) or 5,
             priming=priming,
             model=getattr(project, "default_model", None),
-            max_searches=self.search_budget_per_run,
+            max_searches=max_searches,
         )
 
         self._record_search_cost(ledger)
@@ -283,9 +307,11 @@ class RunService:
             if source.url in supported_urls:
                 source.credibility = "supported"
 
-    def _apply_strategy(self, project) -> None:
+    def _apply_strategy(self, project, max_searches: Optional[int] = None) -> None:
         if hasattr(self.search_provider, "budget"):
-            self.search_provider.budget = SearchBudget(max_calls=self.search_budget_per_run)
+            self.search_provider.budget = SearchBudget(
+                max_calls=max_searches or self.search_budget_per_run
+            )
         prefer = {d.lower().removeprefix("www.") for d in getattr(project, "prefer_domains", []) or []}
         exclude = {d.lower().removeprefix("www.") for d in getattr(project, "exclude_domains", []) or []}
         if hasattr(self.search_provider, "prefer_domains"):
@@ -444,6 +470,18 @@ def default_run_service(output_dir: Path | str, **overrides: Any) -> RunService:
         from .providers.openai_provider import OpenAIEmbeddingProvider
 
         knowledge = KnowledgeStore(embedder=OpenAIEmbeddingProvider())
+
+    overrides.setdefault("max_usd_per_run", _env_float("CONTENTFORGE_MAX_USD_PER_RUN"))
+    if os.getenv("CONTENTFORGE_MAX_SEARCH_CALLS"):
+        overrides.setdefault("search_budget_per_run", int(os.environ["CONTENTFORGE_MAX_SEARCH_CALLS"]))
     return RunService(
         llm=llm, search_provider=search_provider, output_dir=output_dir, knowledge=knowledge, **overrides
     )
+
+
+def _env_float(name: str) -> Optional[float]:
+    raw = os.getenv(name)
+    try:
+        return float(raw) if raw else None
+    except ValueError:
+        return None

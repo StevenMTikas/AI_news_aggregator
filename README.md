@@ -1,34 +1,27 @@
 # ContentForge
 
-An AI content generator that creates structured, ready-to-publish blog posts for any of your
-own **projects** — each with its own audience, tone, and branding. Built in plain Python on the
-OpenAI API (GPT-4o-mini). A larger rewrite adding persisted research, SQLite, and multi-format
-output (LinkedIn, newsletter, podcast script, PDF guide) is in progress — see
-[ARCHITECTURE_PLAN.md](ARCHITECTURE_PLAN.md); Phases 1–4 are done.
+A single-operator content engine. Research a topic once, then compose many artifacts from that
+one saved brief — blog post, LinkedIn post, social thread, repurposed snippets — and later
+assemble a newsletter, podcast script, or PDF guide from several past runs. Plain Python on the
+OpenAI API + Serper; SQLite for everything it remembers. Built over the plan in
+[ARCHITECTURE_PLAN.md](ARCHITECTURE_PLAN.md).
 
-## 🎯 What It Does
+## 🎯 How it works
 
-This project uses AI agents to:
-1. **Research** current developments, trends, and real-world examples for your topic
-2. **Write** a structured post (title, hook, sections with pull-quotes, key takeaways, tags,
-   sources) tailored to a specific project's audience and tone
-3. **Save** a Jekyll-ready `.md` file to `output/`, and expose the full structured content over
-   the API for other tools (e.g. a social-media repurposing tool) to consume
+1. **Research** — keyword → web research → synthesis → fact-check, producing a `ResearchBrief`
+   that is cached per project (so re-running a topic is free, and each project gets "smarter"
+   as its research corpus grows).
+2. **Compose** — each artifact composes from that brief. Blog and LinkedIn run a full review
+   chain (fact-check → audience critique → edit → de-AI voice pass); thread and repurpose run
+   a lighter voice-only pass.
+3. **Render** — blog to Jekyll Markdown, LinkedIn/thread to plain text, guide to PDF, etc.
+   Files land in `data/output/`; the structured content, run history, and cost ledger are in
+   `data/app.db`.
 
-Content generation is organized around **projects** — reusable profiles (audience, tone,
-category tags, author, target word count) you set up once via the admin dashboard and select
-each time you generate content. This is what lets the same generator serve multiple unrelated
-projects instead of always writing in one fixed voice.
+Everything is organized around **projects** — a reusable profile (audience, voice/style guide,
+banned phrases, research strategy, subject focus) you set up once and select each run.
 
-## 🌐 Two Ways to Use
-
-### Option 1: Web Interface (Recommended)
-Beautiful, user-friendly web interface with real-time progress tracking.
-
-### Option 2: Command Line
-Direct command-line execution for automation and scripting.
-
-## 🚀 Quick Start - Web Interface
+## 🚀 Quick Start
 
 ### 1. Install Dependencies
 
@@ -38,16 +31,18 @@ pip install -e .
 
 ### 2. Set Up Environment Variables
 
-Create a `.env` file in the root directory (see `ENV_TEMPLATE.txt`):
+Copy `ENV_TEMPLATE.txt` to `.env` and fill in:
 
 ```bash
-OPENAI_API_KEY=your-actual-api-key-here
-SERPER_API_KEY=your-actual-serper-key-here
+OPENAI_API_KEY=your-actual-api-key-here   # https://platform.openai.com/api-keys
+SERPER_API_KEY=your-actual-serper-key-here # https://serper.dev/api-key (free tier)
 ```
 
-Get your API keys:
-- **OpenAI**: https://platform.openai.com/api-keys
-- **Serper**: https://serper.dev/api-key (free tier available)
+Optional, all documented in `ENV_TEMPLATE.txt`: `CONTENTFORGE_API_KEY` (locks the
+mutating/generating routes behind an `X-API-Key` header; unset = open, for local use),
+`CONTENTFORGE_MAX_USD_PER_RUN` / `CONTENTFORGE_MAX_SEARCH_CALLS` (spend caps — a run that hits
+one finishes `partial` with whatever completed), `CONTENTFORGE_RATE_LIMIT_PER_MIN`,
+`CONTENTFORGE_CORS_ORIGINS`, `CONTENTFORGE_DB`.
 
 ### 3. Start the Web Server
 
@@ -61,49 +56,41 @@ Open **http://localhost:8000/admin** and create at least one project (audience, 
 tags, author, target word count). Generation requires selecting a project — there's no more
 generic fallback.
 
-### 5. Generate Content
+### 5. Use it
 
-Navigate to: **http://localhost:8000**
+| Page | What it's for |
+|---|---|
+| `/` | Generate — pick a project + topic, choose artifacts (blog / LinkedIn / thread / repurpose), watch progress |
+| `/compile` | Assemble a newsletter / podcast script / guide-PDF from prior runs |
+| `/runs` | Run history + cost, re-render a document, open past output |
+| `/admin` | Create and edit projects |
 
-- ✅ Pick your project
-- ✅ Enter your blog topic
-- ✅ Watch real-time progress
-- ✅ Download generated blog posts
-- ✅ View blog content in your browser
+Generated files land in `data/output/`; everything else (projects, run history, cached
+research, cost ledger) is in `data/app.db`.
 
 ---
 
-## 🚀 Quick Start - Command Line
-
-### 1. Install, Configure, and Create a Project
-
-Follow steps 1-2 and 4 from the Web Interface section above (a project must exist before you can
-generate anything — creating one is currently only possible through `/admin` or the
-`/api/projects` API, not the CLI).
-
-### 2. Run the Generator
-
-The `contentforge` console script calls [`main.run()`](src/contentforge/main.py), which
-**requires a project slug** — there's no argument parsing on the bare command yet (a proper
-CLI lands in Phase 9 of [ARCHITECTURE_PLAN.md](ARCHITECTURE_PLAN.md)), so run it directly:
+## 🚀 Command Line
 
 ```bash
-python -c "from contentforge.main import run; run('your-project-slug', 'Your topic here')"
+contentforge project add mysite --name "My Site" --audience "..." --author "Me"
+contentforge generate mysite "AI tools for small teams" -a blog_post -a linkedin_post
+contentforge compile mysite newsletter --last-runs 5 --angle "what changed this month"
+contentforge runs list --project mysite
+contentforge brief list --project mysite
+contentforge brief update <brief-id>          # re-research against the existing brief
+contentforge render <document-id>             # re-render a stored doc, no LLM/search
+contentforge backup                           # snapshot data/app.db
 ```
 
-### 3. Find Your Blog Post
-
-The generated blog post will be saved to:
-```
-output/YYYY-MM-DD-[topic-slug]-blog-post.md
-```
+`contentforge --help` lists everything.
 
 ## 📝 Output Format
 
 Each generation produces a structured object (title, meta description, hook, sections with
 optional pull-quotes, key takeaways, an optional call to action, tags, and sources) — see the
 **Structured Output & the API** section below. That structure is rendered to a Jekyll-ready
-`.md` file for `output/`. Front matter carries the post's meta description and keyword-derived
+`.md` file for `data/output/`. Front matter carries the post's meta description and keyword-derived
 `tags`; `categories` comes from the selected project's `category_tags`, and `author` from the
 project:
 
@@ -155,9 +142,11 @@ prompt + output-schema pairs, run by a small tool-calling loop
 | `voice_agent` | — | same schema | Sentence-level rewrite to strip AI-tell patterns, constrained to keep every fact and source. |
 | `metadata_agent` | — | `DocumentMetadata` | Title options, meta description, slug, tags, and internal-link suggestions from prior project pieces. |
 | `brief_updater_agent` | web search | `ResearchBrief` | Re-researches a topic against its existing brief — keeps what holds, revises what changed, adds what's new. |
-
 | `outline_agent` | — | `Outline` | Plans a long-form piece from a corpus of the project's prior work. |
 | `{newsletter,podcast_script,guide}_writer_agent` | — | `Newsletter` / `PodcastScript` / `Guide` | Writes the long-form piece from the outline + corpus. |
+
+Per-project settings (`/admin`): `default_model` overrides the model for every agent;
+`max_usd_per_run` / `max_search_calls` cap spend.
 
 The research pipeline (keyword → research → synthesis → brief fact-check) produces a
 `ResearchBrief`. Each output artifact then composes from that one brief: blog and LinkedIn
@@ -236,7 +225,10 @@ including the project CRUD endpoints, are auto-generated by FastAPI at **`/docs`
 
 ## 💰 Cost
 
-Using GPT-4o-mini, each blog post costs approximately **$0.01-0.05** to generate.
+With GPT-4o-mini a blog post is a few cents; a multi-artifact run or a compilation more.
+Every run's token/search spend is recorded and shown per project on `/runs`. Set
+`CONTENTFORGE_MAX_USD_PER_RUN` (or per-project `max_usd_per_run`) to cap it — a run that hits
+the cap finishes `partial` with whatever completed.
 
 ## 📁 Project Structure
 
@@ -254,19 +246,14 @@ contentforge/
 ├── future-ideas.md            # Smaller gaps, most folded into ARCHITECTURE_PLAN.md
 ├── package.json               # JS test tooling (vitest + jsdom)
 ├── vitest.config.js
-├── static/                    # Web interface files
-│   ├── index.html             # Generator page (requires picking a project)
-│   ├── admin.html             # Project management dashboard
-│   ├── style.css
-│   ├── app.js
-│   ├── admin.js
-│   └── tests/                 # Vitest tests for app.js/admin.js
+├── static/                    # index / admin / compile / runs pages + vitest tests
 ├── src/contentforge/          # Core application
 │   ├── main.py                # build_default_inputs, run_pipeline
-│   ├── cli.py                 # command-line entry point
+│   ├── cli.py                 # typer CLI (+ the python -c run() shim)
+│   ├── security.py            # API-key dependency, rate limiter, CORS origins
 │   ├── run_service.py         # orchestration: research -> compose -> render -> write
 │   ├── agent_loop.py          # the tool-calling loop that runs one agent
-│   ├── cost.py                # token/search cost accounting
+│   ├── cost.py                # token/search cost accounting + BudgetExceeded
 │   ├── knowledge.py           # per-project hybrid retrieval (FTS5 + embeddings) + priming
 │   ├── projects.py            # ProjectProfile model + SQLite-backed CRUD
 │   ├── schemas.py             # structured-output models (BlogContent, ResearchBrief, ...)
@@ -360,7 +347,7 @@ pip install -e .
 Make sure you created a `.env` file in the project's root directory with your API key.
 
 ### "Permission denied" when creating output folder
-The script will automatically create the `output/` folder in the root directory.
+`data/output/` is created automatically.
 
 ### "Unknown project" / no projects in the dropdown
 Generation requires an existing project. Create one at `/admin` first — the generator form will

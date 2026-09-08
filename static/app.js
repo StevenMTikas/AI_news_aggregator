@@ -78,34 +78,67 @@ async function handleFormSubmit(e) {
         return;
     }
 
+    const artifacts = [...document.querySelectorAll('input[name="artifact"]:checked')].map(el => el.value);
+    if (!artifacts.length) {
+        showError('Pick at least one artifact.');
+        return;
+    }
+
     showCard('progress');
 
     try {
         const response = await fetch('/api/generate', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 topic: topic,
                 project_slug: projectSlug,
-                topic_slug: topicSlug || null
+                topic_slug: topicSlug || null,
+                artifacts: artifacts,
+                force_fresh: document.getElementById('forceFresh').checked,
             })
         });
-        
+
         if (!response.ok) {
             const error = await response.json();
             throw new Error(error.detail || 'Failed to start blog generation');
         }
-        
+
         const data = await response.json();
         currentTaskId = data.task_id;
-        
-        startPolling();
-        
+
+        streamStatus();
+
     } catch (error) {
         console.error('Error:', error);
         showError(error.message);
+    }
+}
+
+let eventSource = null;
+
+function streamStatus() {
+    stopPolling();
+    if (eventSource) eventSource.close();
+    try {
+        eventSource = new EventSource(`/api/status/${currentTaskId}/stream`);
+        eventSource.onmessage = (e) => applyStatus(JSON.parse(e.data));
+        eventSource.onerror = () => { eventSource.close(); eventSource = null; startPolling(); };
+    } catch (_) {
+        startPolling();
+    }
+}
+
+async function applyStatus(data) {
+    updateProgress(data.progress, data.message);
+    if (data.status === 'completed' || data.status === 'partial') {
+        if (eventSource) { eventSource.close(); eventSource = null; }
+        stopPolling();
+        await handleCompletion(data);
+    } else if (data.status === 'failed') {
+        if (eventSource) { eventSource.close(); eventSource = null; }
+        stopPolling();
+        showError(data.message);
     }
 }
 
@@ -120,26 +153,10 @@ function startPolling() {
 
 async function checkStatus() {
     if (!currentTaskId) return;
-    
     try {
         const response = await fetch(`/api/status/${currentTaskId}`);
-        
-        if (!response.ok) {
-            throw new Error('Failed to get task status');
-        }
-        
-        const data = await response.json();
-        
-        updateProgress(data.progress, data.message);
-        
-        if (data.status === 'completed') {
-            stopPolling();
-            await handleCompletion(data);
-        } else if (data.status === 'failed') {
-            stopPolling();
-            showError(data.message);
-        }
-        
+        if (!response.ok) throw new Error('Failed to get task status');
+        await applyStatus(await response.json());
     } catch (error) {
         console.error('Error checking status:', error);
         stopPolling();
@@ -261,10 +278,29 @@ function resetForm() {
 
 topicInput.addEventListener('input', (e) => {
     if (!topicSlugInput.value) {
-        const slug = generateSlug(e.target.value);
-        topicSlugInput.value = slug;
+        topicSlugInput.value = generateSlug(e.target.value);
     }
 });
+
+let freshCheckTimer = null;
+function checkFreshResearch() {
+    clearTimeout(freshCheckTimer);
+    const status = document.getElementById('researchStatus');
+    const slug = projectSelect.value;
+    const topic = topicInput.value.trim();
+    if (!status || !slug || topic.length < 3) { if (status) status.textContent = ''; return; }
+    freshCheckTimer = setTimeout(async () => {
+        try {
+            const r = await fetch(`/api/briefs/fresh?project_slug=${encodeURIComponent(slug)}&topic=${encodeURIComponent(topic)}`);
+            const d = await r.json();
+            status.textContent = d.fresh
+                ? `✓ fresh research from ${d.created_at.slice(0, 10)} will be reused — no search cost`
+                : 'will run new research (Serper credits)';
+        } catch (_) { status.textContent = ''; }
+    }, 400);
+}
+topicInput.addEventListener('input', checkFreshResearch);
+projectSelect.addEventListener('change', checkFreshResearch);
 
 function generateSlug(text) {
     return text

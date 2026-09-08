@@ -12,6 +12,12 @@ from typing import Literal
 
 CostKind = Literal["llm", "search", "embedding"]
 
+
+class BudgetExceeded(RuntimeError):
+    """A run's spend cap was hit; the orchestrator keeps completed artifacts and marks the
+    run ``partial``.
+    """
+
 # USD per 1M tokens (input, output). Search is priced per call. Update as pricing changes;
 # unknown models fall back to 0.0 so accounting never crashes a run.
 _LLM_PRICES: dict[str, tuple[float, float]] = {

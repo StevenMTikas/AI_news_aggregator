@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Run history - ContentForge</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="logo"><h1>Run history</h1></div>
+            <nav class="header-nav"><a href="/">&larr; Generator</a> &middot; <a href="/compile">Compile</a> &middot; <a href="/admin">Manage Projects</a></nav>
+        </header>
+        <main class="main-content">
+            <div class="card">
+                <div class="form-group">
+                    <label for="project">Project</label>
+                    <select id="project"><option value="">All projects</option></select>
+                </div>
+                <p class="cost-summary" id="costSummary"></p>
+                <div id="runsContainer"><p class="empty-state">Loading&hellip;</p></div>
+            </div>
+            <div class="card hidden" id="detailCard">
+                <button class="btn btn-secondary btn-small" id="backBtn">&larr; Back to list</button>
+                <h2 id="detailTitle"></h2>
+                <p id="detailMeta" class="detail-meta"></p>
+                <div id="detailDocs"></div>
+            </div>
+        </main>
+        <footer class="footer"><p>ContentForge</p></footer>
+    </div>
+    <script src="/static/runs.js"></script>
+</body>
+</html>

@@ -242,3 +242,25 @@ def test_start_compilation_fails_with_empty_corpus(tmp_path):
     with pytest.raises(ValueError, match="no prior content"):
         svc.start_compilation(project(), "newsletter", CorpusSelection(run_ids=["nope"]),
                               current_date="2026-10-01")
+
+
+# --------------------------------------------------------------------- budget caps
+
+
+def test_budget_cap_marks_run_partial_and_keeps_artifacts(tmp_path, monkeypatch):
+    from src.contentforge import cost as cost_mod
+    from src.contentforge.db import runs
+
+    # $5 per LLM turn: research (5 turns = $25) clears a $30 cap; the blog artifact
+    # (5 more = $50) trips it on the post-artifact check.
+    monkeypatch.setattr(cost_mod.CostEvent, "usd", property(lambda self: 5.0))
+
+    llm = FakeLLMProvider(_research_turns() + _blog_turns("Blog") + _metadata_turn())
+    svc = make_service(tmp_path, llm, max_usd_per_run=30.0)
+
+    result = svc.run_atomic(project(), "AI for restaurants", artifacts=("blog_post",),
+                            current_date="2026-09-07")
+
+    run = runs.get_run(result.run_id)
+    assert run.status == "partial" and "spend cap" in run.message
+    assert len(result.documents) == 1  # the blog that finished before the cap tripped

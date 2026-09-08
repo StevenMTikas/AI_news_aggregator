@@ -19,3 +19,13 @@ def isolated_db(tmp_path):
 def fake_api_keys(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
     monkeypatch.setenv("SERPER_API_KEY", "test-serper-key")
+    monkeypatch.delenv("CONTENTFORGE_API_KEY", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def reset_rate_limiter():
+    from src.contentforge.security import generation_limiter
+
+    generation_limiter._hits.clear()
+    yield
+    generation_limiter._hits.clear()

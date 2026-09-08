@@ -34,7 +34,9 @@ uvicorn app:app --reload
 ## Optional: personal server / VPS via Docker
 
 Use this only if you want ContentForge reachable when you're away from your main machine. Run
-a single instance and mount a volume so state survives restarts.
+a single instance and mount a volume so state survives restarts. **Set `CONTENTFORGE_API_KEY`
+and `CONTENTFORGE_CORS_ORIGINS`** in `.env` before exposing it beyond localhost — the
+mutating/generating routes then require an `X-API-Key` header.
 
 ```bash
 docker build -t contentforge .

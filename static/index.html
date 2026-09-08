@@ -24,7 +24,7 @@
                 <h1>ContentForge</h1>
             </div>
             <p class="subtitle">Generate engaging AI-powered blog posts in minutes</p>
-            <nav class="header-nav"><a href="/admin">Manage Projects</a> · <a href="/compile">Compile long-form</a></nav>
+            <nav class="header-nav"><a href="/admin">Manage Projects</a> · <a href="/compile">Compile long-form</a> · <a href="/runs">Run history</a></nav>
         </header>
         <main class="main-content">
             <div class="card" id="inputCard">
@@ -46,6 +46,18 @@
                         <label for="topicSlug">URL Slug (Optional)</label>
                         <input type="text" id="topicSlug" name="topicSlug" placeholder="e.g., ai-tools-restaurants-boost-reservations">
                         <small>A URL-friendly version of your topic (auto-generated if left blank)</small>
+                    </div>
+                    <div class="form-group">
+                        <label>Artifacts</label>
+                        <label class="check-row"><input type="checkbox" name="artifact" value="blog_post" checked> Blog post</label>
+                        <label class="check-row"><input type="checkbox" name="artifact" value="linkedin_post"> LinkedIn post</label>
+                        <label class="check-row"><input type="checkbox" name="artifact" value="social_thread"> Social thread</label>
+                        <label class="check-row"><input type="checkbox" name="artifact" value="repurpose"> Repurpose snippets</label>
+                        <small>All share one research pass. Pick more here rather than running the topic again.</small>
+                    </div>
+                    <div class="form-group">
+                        <label class="check-row"><input type="checkbox" id="forceFresh"> Force fresh research (ignore a cached brief)</label>
+                        <p class="research-status" id="researchStatus"></p>
                     </div>
                     <button type="submit" class="btn btn-primary" id="generateBtn">
                         <span class="btn-text">Generate Blog Post</span>

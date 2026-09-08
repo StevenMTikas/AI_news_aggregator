@@ -436,3 +436,23 @@ body {
     }
 }
 
+
+
+/* Phase 9 additions */
+.check-row { display: block; font-weight: 400; margin: 0.25rem 0; cursor: pointer; }
+.check-row input { margin-right: 0.5rem; }
+.research-status { font-size: 0.85rem; color: #555; margin-top: 0.4rem; min-height: 1.1em; }
+.cost-summary { font-size: 0.9rem; color: #444; margin: 0.5rem 0 1rem; }
+.detail-meta { color: #666; font-size: 0.9rem; }
+.doc-row { padding: 0.6rem 0; border-bottom: 1px solid #eee; }
+.doc-actions { float: right; display: inline-flex; gap: 0.4rem; }
+.run-list { max-height: 240px; overflow-y: auto; border: 1px solid #ddd; border-radius: 6px; padding: 0.5rem; }
+.run-row { display: block; padding: 0.3rem 0; font-weight: 400; cursor: pointer; }
+.run-row input { margin-right: 0.5rem; }
+.run-row small { color: #888; margin-left: 0.5rem; }
+.scope-fallback { margin-top: 0.5rem; font-size: 0.9rem; }
+.selection-count { font-size: 0.85rem; color: #555; }
+.status-completed { color: #10b981; }
+.status-failed { color: #ef4444; }
+.status-partial { color: #f59e0b; }
+.status-running, .status-pending { color: #6366f1; }

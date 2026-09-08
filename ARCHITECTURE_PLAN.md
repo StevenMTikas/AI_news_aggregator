@@ -381,7 +381,7 @@ Each phase is independently shippable, ends with `pytest` green (network-free) a
 smoke run. Ordered so the risky middle (CrewAI removal, DB) has a correct reference output on
 either side.
 
-**Progress:** Phase 1–8 ✅ · Phase 9 → next.
+**Progress:** Phase 1–9 ✅ · Phase 10 → next.
 
 ### Phase 1 — Correct the current output (reference baseline) · ~45 min · ✅ done
 Minimal slice of the old plan's Phase 1 — only what carries forward:
@@ -577,12 +577,33 @@ Shipped:
   podcast script renders with `## [SEGMENT n: …]` cues; guide renders as a real `%PDF-`.
   171 pytest + 10 vitest.
 
-### Phase 9 — Web UI rework + auth + CLI · ~1.5–2 days
-- API-key dependency; CORS lock; `/api/generate` + `/api/compile` rate limit.
-- `typer` CLI (§9.3).
-- Rebuild the six screens in §10; htmx for run-history/progress; SSE progress; vitest
-  coverage for new JS.
-- README rewrite; `DEPLOYMENT.md` → local-first + optional Docker/volume.
+### Phase 9 — Web UI rework + auth + CLI · ~1.5–2 days · ✅ done
+Shipped:
+- `security.py` — opt-in API-key dependency (`CONTENTFORGE_API_KEY`; guards the
+  mutating/generating routes, reads stay open so the same-origin UI works), a sliding-window
+  `RateLimiter` on `/api/generate` + `/api/compile`, env-configurable CORS origins (default
+  localhost). All wired into `app.py`.
+- Budget caps: migration **003** adds `project.max_usd_per_run` / `max_search_calls`; env
+  defaults `CONTENTFORGE_MAX_USD_PER_RUN` / `CONTENTFORGE_MAX_SEARCH_CALLS`. `RunService`
+  checks spend after research and after each artifact — on hit it raises `BudgetExceeded`,
+  keeps completed artifacts, and finalizes the run `partial`.
+- `cli.py` → a `typer` app (`contentforge` console script): `generate`, `compile`, `render`,
+  `backup`, `project [list|show|add|rm]`, `runs [list|show]`, `brief [list|show|update]`.
+  Subcommands call the library directly. `run()` kept for the `python -c` path.
+- Frontend: generate page gains artifact checkboxes + a force-fresh toggle + a
+  pre-commit research-status line (`GET /api/briefs/fresh`); status now streams over SSE
+  (`/api/status/{id}/stream`) with polling as fallback. New `/runs` page — run history + a
+  `/api/costs` per-project rollup + per-document re-render. `/compile` (Phase 8) kept.
+  Consistent nav; the CrewAI-era footers/links removed. vitest for the new JS (13 total).
+- Docs: README quick-start / CLI / env-var sections; `ENV_TEMPLATE.txt` documents every knob;
+  `start_web.py` de-crufted (no `input()` prompt); `DEPLOYMENT.md` notes the auth vars.
+
+Deviation: kept vanilla JS rather than adopting **htmx** — the existing frontend is small and
+tested, and the substance (the new screens, SSE instead of polling) landed without it.
+
+**Gate:** 181 pytest + 13 vitest. Auth verified (locked route → 401 without key, 200 with;
+reads stay open); rate limiter and budget-cap `partial` both covered; the CLI exercised via
+`typer.testing.CliRunner`; the reworked pages verified in a browser.
 
 ### Phase 10 — Cost ledger + polish · ~half day
 - `/api/costs` + per-project / per-run rollups; the cost widget.
